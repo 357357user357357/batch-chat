@@ -32,13 +32,13 @@ import {
 
 const DEMO_JOBS = [
   {
-    messages: [{ role: 'user' as const, content: 'Какой столицей Японии? Ответь одним словом.' }],
+    messages: [{ role: 'user' as const, content: 'What is the capital of Japan? Answer in one word.' }],
   },
   {
-    messages: [{ role: 'user' as const, content: 'Сколько будет 40 + 2? Ответь числом.' }],
+    messages: [{ role: 'user' as const, content: 'What is 40 + 2? Answer with the number only.' }],
   },
   {
-    messages: [{ role: 'user' as const, content: 'Что вернёт функция add(40, 2)? Ответь числом.' }],
+    messages: [{ role: 'user' as const, content: 'What does add(40, 2) return? Answer with the number only.' }],
   },
 ];
 

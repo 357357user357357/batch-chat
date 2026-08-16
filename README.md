@@ -17,11 +17,14 @@ rebuilt automatically on every push to `main` (see
 
 ## Features
 
-- **Language**: English (default) ⇄ Russian — the EN|RU toggle lives on the
-  main screens and remembers your choice.
-- **Live chat**: instant answers from any OpenRouter model you pick from the
-  live catalog (the list loads from `openrouter.ai/api/v1/models`, tap
-  `refresh` to re-fetch). LaTeX answers render with MathJax.
+- **Live chat**: instant answers from any OpenRouter model you pick. LaTeX
+  answers render with MathJax, and both the full answer and each individual
+  formula can be copied (the formula is copied as its LaTeX source, just like
+  OpenRouter's own copy affordance).
+- **Browse models**: an in-app catalog of *every* OpenRouter model — live and
+  `:batch` together — searchable by name/id and sortable by newest, price
+  (low→high or high→low) or context length, so you can hunt for interesting
+  new models.
 - **Batches**: compose up to 30 questions, pick a `…:batch` model from the same
   catalog, and watch them complete in the background — even across restarts
   (history is persisted on-device and in-flight batches resume automatically).
@@ -48,5 +51,5 @@ npx expo start
 - `src/app/chat.tsx` — the live chat screen
 - `src/components/math-view.tsx` — MathJax LaTeX rendering with auto-height
   (no more clipped formulas)
+- `src/components/model-browser.tsx` — searchable, sortable catalog of all models
 - `src/services/openrouter.ts` — OpenRouter sync + batch + models catalog
-- `src/i18n/` — English/Russian strings (default: English)

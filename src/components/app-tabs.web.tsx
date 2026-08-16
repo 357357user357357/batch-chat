@@ -10,7 +10,6 @@ import { SymbolView } from 'expo-symbols';
 import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
 
 import { ExternalLink } from './external-link';
-import { LanguageToggle } from './language-toggle';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
@@ -68,8 +67,6 @@ export function CustomTabList(props: TabListProps) {
         </ThemedText>
 
         {props.children}
-
-        <LanguageToggle />
 
         <ExternalLink href="https://docs.expo.dev" asChild>
           <Pressable style={styles.externalPressable}>

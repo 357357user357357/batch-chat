@@ -1,8 +1,10 @@
 import { useMemo } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
+import * as Clipboard from 'expo-clipboard';
 
 import { ThemedText } from '@/components/themed-text';
 import { MathView } from '@/components/math-view';
+import { useI18n } from '@/i18n';
 
 type Segment = { kind: 'text' | 'math'; value: string };
 
@@ -38,11 +40,21 @@ function stripDelimiters(raw: string): string {
 
 /**
  * Renders AI text that may contain LaTeX: plain paragraphs + MathJax formulas.
- * All math blocks are flattened into display-style formulas (rendered by
- * `MathView`), which keeps the implementation simple and readable on a phone.
+ * Each formula is tappable to copy its LaTeX source (like OpenRouter's
+ * "copy" affordance); a long-press is not needed on mobile, so a visible
+ * "Copy formula" affordance is shown per block.
  */
 export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: number }) {
   const segments = useMemo(() => splitMathSegments(text), [text]);
+  const { t } = useI18n();
+
+  const copyFormula = async (source: string) => {
+    try {
+      await Clipboard.setStringAsync(source);
+    } catch (err) {
+      console.warn('[math-answer] copy failed', err);
+    }
+  };
 
   if (!segments.length) {
     return <ThemedText type="small">{text}</ThemedText>;
@@ -53,10 +65,18 @@ export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: n
       {segments.map((segment, index) =>
         segment.kind === 'math' ? (
           <View key={index} style={styles.mathBlock}>
-            <MathView
-              tex={stripDelimiters(segment.value)}
-              fontSize={Math.max(12, Math.round(fontSize * 0.95))}
-            />
+            <Pressable
+              onPress={() => void copyFormula(stripDelimiters(segment.value))}
+              accessibilityLabel={t('chat.copyFormula')}
+              hitSlop={6}>
+              <MathView
+                tex={stripDelimiters(segment.value)}
+                fontSize={Math.max(12, Math.round(fontSize * 0.95))}
+              />
+              <ThemedText type="code" themeColor="textSecondary" style={styles.copyHint}>
+                ⧉ {t('chat.copyFormula')}
+              </ThemedText>
+            </Pressable>
           </View>
         ) : (
           <ThemedText key={index} type="small" style={styles.text}>
@@ -78,5 +98,9 @@ const styles = StyleSheet.create({
   mathBlock: {
     marginVertical: 4,
     alignSelf: 'stretch',
+  },
+  copyHint: {
+    alignSelf: 'flex-end',
+    marginTop: -6,
   },
 });

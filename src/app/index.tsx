@@ -5,7 +5,6 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { AnimatedIcon } from '@/components/animated-icon';
 import { BatchTestCard } from '@/components/batch-test-card';
 import { HintRow } from '@/components/hint-row';
-import { LanguageToggle } from '@/components/language-toggle';
 import { MathView } from '@/components/math-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -32,13 +31,6 @@ export default function HomeScreen() {
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
-        <View style={styles.topRow}>
-          <ThemedText type="code" themeColor="textSecondary">
-            {t('lang.tagline')}
-          </ThemedText>
-          <LanguageToggle />
-        </View>
-
         <ThemedView style={styles.heroSection}>
           <AnimatedIcon />
           <ThemedText type="title" style={styles.title}>
@@ -93,13 +85,6 @@ const styles = StyleSheet.create({
     gap: Spacing.three,
     paddingBottom: BottomTabInset + Spacing.three,
     maxWidth: MaxContentWidth,
-  },
-  topRow: {
-    alignSelf: 'stretch',
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: Spacing.two,
   },
   heroSection: {
     alignItems: 'center',

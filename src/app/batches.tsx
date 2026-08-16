@@ -12,9 +12,9 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 
-import { LanguageToggle } from '@/components/language-toggle';
 import { MathAnswer } from '@/components/math-answer';
 import { ModelChips } from '@/components/model-chips';
+import { ModelBrowser } from '@/components/model-browser';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
@@ -99,6 +99,7 @@ export default function BatchesScreen() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
   const pollRuns = useRef(new Set<string>());
 
   const updateItem = useCallback((id: string, patch: Partial<HistoryItem>) => {
@@ -301,7 +302,6 @@ export default function BatchesScreen() {
           <ThemedText type="subtitle">{t('batches.title')}</ThemedText>
           {hasActive && <ActivityIndicator size="small" />}
           <View style={styles.headerSpacer} />
-          <LanguageToggle />
         </View>
         <ThemedText themeColor="textSecondary" type="small">
           {t('batches.subtitle')}
@@ -328,6 +328,24 @@ export default function BatchesScreen() {
           </ThemedText>
 
           <ModelChips mode="batch" value={model} onChange={setModel} visibleCount={6} />
+
+          <Pressable
+            onPress={() => setBrowseOpen((v) => !v)}
+            hitSlop={8}
+            style={styles.browseToggle}>
+            <ThemedText type="code" themeColor="textSecondary">
+              {browseOpen ? t('common.close') : t('models.title')}
+            </ThemedText>
+          </Pressable>
+          {browseOpen ? (
+            <ModelBrowser
+              selectedId={model}
+              onSelect={(id) => {
+                setModel(id);
+                setBrowseOpen(false);
+              }}
+            />
+          ) : null}
 
           <Pressable
             disabled={submitting || jobCount === 0}
@@ -524,6 +542,10 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     fontSize: 15,
     textAlignVertical: 'top',
+  },
+  browseToggle: {
+    alignSelf: 'flex-start',
+    paddingVertical: 2,
   },
   submitButton: {
     backgroundColor: '#3c87f7',

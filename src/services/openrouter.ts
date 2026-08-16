@@ -80,12 +80,12 @@ const OPENROUTER_BATCH_URL = 'https://openrouter.ai/api/beta/batches';
 /** Full catalog of models available on OpenRouter (used for pickers). */
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 
-/** Cheaper batch model: 50% off the standard gemini-3.7-flash price. */
+/** Cheaper batch model: 50% off the standard price. */
 export const OPENROUTER_BATCH_MODEL =
-  process.env.EXPO_PUBLIC_OPENROUTER_BATCH_MODEL ?? 'google/gemini-3.7-flash:batch';
+  process.env.EXPO_PUBLIC_OPENROUTER_BATCH_MODEL ?? 'anthropic/claude-fable-5:batch';
 
 export const OPENROUTER_MODEL =
-  process.env.EXPO_PUBLIC_OPENROUTER_MODEL ?? 'openai/gpt-4o-mini';
+  process.env.EXPO_PUBLIC_OPENROUTER_MODEL ?? 'deepseek/deepseek-v4-flash-0731';
 
 export class OpenRouterError extends Error {
   readonly status: number | undefined;
@@ -490,6 +490,8 @@ export type OpenRouterModelInfo = {
   id: string;
   name: string;
   context_length?: number;
+  created?: number;
+  description?: string;
   pricing?: { prompt?: number; completion?: number };
 };
 
@@ -524,6 +526,11 @@ export async function listModels(): Promise<OpenRouterModelInfo[]> {
       name: typeof entry.name === 'string' && entry.name ? (entry.name as string) : (entry.id as string),
       context_length:
         typeof entry.context_length === 'number' ? entry.context_length : undefined,
+      created: typeof entry.created === 'number' ? entry.created : undefined,
+      description:
+        typeof entry.description === 'string' && entry.description
+          ? (entry.description as string)
+          : undefined,
       pricing:
         typeof entry.pricing === 'object' && entry.pricing !== null
           ? {

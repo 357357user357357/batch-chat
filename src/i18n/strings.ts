@@ -1,12 +1,10 @@
 /**
- * App strings in English (default) and Russian.
+ * App strings (English only).
  *
  * Use `useI18n().t(key, vars)` in components instead of hardcoding UI text.
- * The default language is English; users can switch to Russian with the
- * language toggle (the choice is persisted on the device).
  */
 
-export type Language = 'en' | 'ru';
+export type Language = 'en';
 
 const en = {
   'tab.home': 'Home',
@@ -23,8 +21,6 @@ const en = {
   'common.canceled': 'Canceled',
   'common.failed': 'Error',
   'common.delete': 'Delete',
-
-  'lang.tagline': 'Language',
 
   'models.title': 'Models (OpenRouter)',
   'models.refresh': 'refresh',
@@ -127,128 +123,26 @@ const en = {
   'chat.empty':
     'Say something! Ask a question, or paste a formula you want solved.',
   'chat.errorMessage': 'Error: {message}',
+  'chat.copy': 'Copy',
+  'chat.copyFormula': 'Copy formula',
+  'chat.copied': 'Copied to clipboard.',
+
+  'models.searchPlaceholder': 'Search by name or id…',
+  'models.filter.all': 'All',
+  'models.filter.live': 'Live',
+  'models.filter.batch': 'Batch',
+  'models.count': '{count} models',
+  'models.copyId': 'Copy id',
+  'models.sort': 'Sort by',
+  'models.sort.relevance': 'Relevance',
+  'models.sort.newest': 'Newest',
+  'models.sort.priceAsc': 'Price: low → high',
+  'models.sort.priceDesc': 'Price: high → low',
+  'models.sort.context': 'Context length',
+  'models.showMore': 'Show all {count} models',
+  'models.showLess': 'Show fewer',
 };
 
 export type TKey = keyof typeof en;
-const ru: Record<TKey, string> = {
-  'tab.home': 'Главная',
-  'tab.explore': 'Обзор',
-  'tab.batches': 'Батчи',
-  'tab.chat': 'Чат',
 
-  'common.loading': 'Загрузка…',
-  'common.retry': 'Повторить',
-  'common.ok': 'ОК',
-  'common.cancel': 'Отмена',
-  'common.close': 'Закрыть',
-  'common.saved': 'Сохранено',
-  'common.canceled': 'Отменено',
-  'common.failed': 'Ошибка',
-  'common.delete': 'Удалить',
-
-  'lang.tagline': 'Язык',
-
-  'models.title': 'Модели (OpenRouter)',
-  'models.refresh': 'обновить',
-  'models.error': 'Не удалось загрузить модели из OpenRouter.',
-  'models.loading': 'Загружаю модели…',
-  'models.batch.choiceHint': 'Батч-модели (OpenRouter)',
-  'models.live.choiceHint': 'Модели (OpenRouter)',
-  'models.batch.customPlaceholder': '…или впиши свой id батч-модели',
-  'models.live.customPlaceholder': '…или впиши свой id модели',
-
-  'home.heroTitle': 'Добро пожаловать в Expo',
-  'home.getStarted': 'начни здесь',
-  'home.tryEditing': 'Попробуй отредактировать',
-  'home.devTools': 'Инструменты разработчика',
-  'home.freshStart': 'Заново с чистого листа',
-  'home.rustUnavailable': 'MyRustModule недоступен в вебе',
-  'home.webDevtools': 'используй devtools браузера',
-  'home.shakeDevice': 'потряси телефон или нажми m в терминале',
-  'home.pressShortcut': 'нажми {shortcut}',
-  'home.deployHint': 'src/app/index.tsx',
-  'home.resetHint': 'npm run reset-project',
-
-  'explore.title': 'Обзор',
-  'explore.subtitle':
-    'В стартовом приложении есть примеры кода, чтобы помочь тебе начать.',
-
-  'status.validating': 'проверка',
-  'status.in_progress': 'в работе',
-  'status.finalizing': 'завершение',
-  'status.completed': 'готово',
-  'status.failed': 'ошибка',
-  'status.expired': 'истёк',
-  'status.cancelling': 'отмена…',
-  'status.cancelled': 'отменён',
-  'status.pending': 'ожидание',
-  'status.error': 'ошибка',
-
-  'card.title': 'OpenRouter: ключ и сессии',
-  'card.batchModelNote':
-    'Батч-модель: {model} — примерно в 2 раза дешевле обычной; живёт до ~24 ч.',
-  'card.envKeyNote':
-    'Ключ из бандла (dev): {name} — виден всем, кто скачает приложение.',
-  'card.deviceKeyNote': 'Ключ на устройстве: {masked} (Android Keystore).',
-  'card.keyPlaceholder': 'Вставь свой API-ключ…',
-  'card.save': 'Сохранить',
-  'card.change': 'Изменить',
-  'card.keySaved': 'Ключ сохранён в защищённом хранилище (Android Keystore).',
-  'card.keySavedFail': 'Не удалось сохранить ключ в защищённом хранилище.',
-  'card.keyDelete': 'Удалить ключ',
-  'card.keyDeleted': 'Сохранённый на устройстве ключ удалён.',
-  'card.secureUnavailable':
-    'Защищённое хранилище работает только на устройстве (не в вебе).',
-  'card.runTest': 'Запустить тест-батч',
-  'card.creating': 'Создаю батч…',
-  'card.batchCreated': 'Батч {id} создан ({status}). Жду выполнения…',
-  'card.batchPolling': 'Батч {id}: {status} ({completed}/{total} готово)',
-  'card.batchDone':
-    'Батч завершён: {status}. Всего запросов: {total}, ошибок: {failed}.',
-  'card.batchError': 'Ошибка батча',
-  'card.errorPrefix': 'Ошибка: {message}',
-
-  'batches.title': 'Батчи',
-  'batches.subtitle':
-    'Одна строка = один запрос. Отправляй пачкой и возвращайся: ответы (и формулы) соберутся прямо здесь.',
-  'batches.promptPlaceholder': 'Вопрос №1\nВопрос №2\nВопрос №3…',
-  'batches.jobCount': '{count} / {max} запросов',
-  'batches.send': 'Отправить батч',
-  'batches.sending': 'Отправляю…',
-  'batches.emptyTitle': 'Пусто',
-  'batches.emptyBody':
-    'Введи хотя бы один вопрос — каждая строка = отдельный запрос.',
-  'batches.modelTitle': 'Модель',
-  'batches.modelBody': 'Укажи модель.',
-  'batches.createError': 'Не удалось создать батч',
-  'batches.historyEmpty': 'История пуста — отправь первый батч.',
-  'batches.doneCount': '{completed}/{total} готово',
-  'batches.errorsCount': ' · {failed} ошибок',
-  'batches.noAnswer': 'без ответа',
-  'batches.copyAll': 'Копировать всё',
-  'batches.exportJson': 'JSON',
-  'batches.saveCsv': 'Сохранить .csv',
-  'batches.delete': 'Удалить',
-  'batches.copyLabel': 'Скопировано',
-  'batches.copyBody': '{label} — в буфере обмена.',
-  'batches.copyFail': 'Не удалось скопировать',
-  'batches.copyPromptLabel': 'Вопрос',
-  'batches.copyAnswersLabel': 'Ответы',
-  'batches.fileFail': 'Не удалось сохранить/поделиться файлом',
-  'batches.saved': 'Файл сохранён в Downloads.',
-  'batches.shared': 'Файл отправлен.',
-
-  'chat.title': 'Чат',
-  'chat.subtitle':
-    'Спрашивай по одному — модель отвечает сразу. Формулы возвращаются в LaTeX.',
-  'chat.placeholder': 'Напиши сообщение…',
-  'chat.send': 'Отправить',
-  'chat.clear': 'Очистить',
-  'chat.clearConfirm': 'Очистить переписку?',
-  'chat.thinking': '{model} думает…',
-  'chat.empty':
-    'Напиши что-нибудь! Спроси что угодно или приведи формулу, которую нужно решить.',
-  'chat.errorMessage': 'Ошибка: {message}',
-};
-
-export const translations: Record<Language, Record<TKey, string>> = { en, ru };
+export const translations: Record<Language, Record<TKey, string>> = { en };

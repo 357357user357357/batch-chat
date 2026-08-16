@@ -11,10 +11,11 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as Clipboard from 'expo-clipboard';
 
-import { LanguageToggle } from '@/components/language-toggle';
 import { MathAnswer } from '@/components/math-answer';
 import { ModelChips } from '@/components/model-chips';
+import { ModelBrowser } from '@/components/model-browser';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
@@ -60,6 +61,7 @@ export default function ChatScreen() {
   const [model, setModel] = useState(OPENROUTER_MODEL);
   const [sending, setSending] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [browseOpen, setBrowseOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
 
   // Restore the conversation from a previous app run.
@@ -131,6 +133,10 @@ export default function ChatScreen() {
     ]);
   };
 
+  const handleCopy = async (content: string) => {
+    await Clipboard.setStringAsync(content);
+  };
+
   const contentPlatformStyle = Platform.select({
     android: {
       paddingTop: insets.top,
@@ -150,7 +156,6 @@ export default function ChatScreen() {
         <View style={[styles.header, contentPlatformStyle]}>
           <View style={styles.headerLeft}>
             <ThemedText type="subtitle">{t('chat.title')}</ThemedText>
-            <LanguageToggle />
           </View>
           <Pressable onPress={handleClear} hitSlop={8} style={styles.clearButton}>
             <ThemedText type="small" themeColor="textSecondary">
@@ -186,7 +191,17 @@ export default function ChatScreen() {
                     {t('chat.errorMessage', { message: message.content })}
                   </ThemedText>
                 ) : (
-                  <MathAnswer text={message.content} />
+                  <>
+                    <MathAnswer text={message.content} />
+                    <Pressable
+                      onPress={() => void handleCopy(message.content)}
+                      hitSlop={8}
+                      style={styles.copyButton}>
+                      <ThemedText type="code" themeColor="textSecondary">
+                        ⧉ {t('chat.copy')}
+                      </ThemedText>
+                    </Pressable>
+                  </>
                 )}
               </ThemedView>
             )
@@ -204,6 +219,23 @@ export default function ChatScreen() {
 
         <View style={styles.composerArea}>
           <ModelChips mode="live" value={model} onChange={setModel} visibleCount={6} />
+          <Pressable
+            onPress={() => setBrowseOpen((v) => !v)}
+            hitSlop={8}
+            style={styles.browseToggle}>
+            <ThemedText type="code" themeColor="textSecondary">
+              {browseOpen ? t('common.close') : t('models.title')}
+            </ThemedText>
+          </Pressable>
+          {browseOpen ? (
+            <ModelBrowser
+              selectedId={model}
+              onSelect={(id) => {
+                setModel(id);
+                setBrowseOpen(false);
+              }}
+            />
+          ) : null}
           <View style={styles.composer}>
             <TextInput
               value={input}
@@ -292,6 +324,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
   },
+  copyButton: {
+    alignSelf: 'flex-end',
+    marginTop: Spacing.one,
+    paddingVertical: 2,
+  },
   thinkingRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -305,6 +342,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingBottom: Spacing.two,
     gap: Spacing.two,
+  },
+  browseToggle: {
+    alignSelf: 'flex-start',
+    paddingVertical: 2,
   },
   composer: {
     flexDirection: 'row',
