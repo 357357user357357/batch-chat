@@ -1,11 +1,10 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Platform,
   Pressable,
   ScrollView,
-  Share,
   StyleSheet,
   TextInput,
   View,
@@ -13,24 +12,27 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 
+import { LanguageToggle } from '@/components/language-toggle';
 import { MathAnswer } from '@/components/math-answer';
+import { ModelChips } from '@/components/model-chips';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useI18n } from '@/i18n';
 import { useTheme } from '@/hooks/use-theme';
 import {
   createBatch,
   extractBatchAnswers,
+  isBatchTerminal,
+  OPENROUTER_BATCH_MODEL,
   waitForBatch,
   type OpenRouterBatch,
 } from '@/services/openrouter';
-
-const MODEL_OPTIONS = [
-  { id: 'google/gemini-3.7-flash:batch', label: 'Gemini 3.7 Flash batch', price: '≈$0.19/$0.94 за 1M' },
-  { id: 'anthropic/claude-fable-5:batch', label: 'Claude Fable 5 batch', price: '$5/$25 за 1M' },
-];
+import { loadJSON, saveJSON } from '@/services/storage';
+import { saveTextFile, type SaveOutcome } from '@/services/files';
 
 const MAX_JOBS = 30;
+const HISTORY_STORAGE_KEY = 'openrouter.batches.history.v1';
 
 type HistoryItem = {
   id: string;
@@ -45,6 +47,7 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Rows: batch_id;model;custom_id;prompt;answer (semicolon-separated, quoted). */
 export function buildCsv(item: HistoryItem): string {
   const answers =
     item.batch && item.batch.status === 'completed' ? extractBatchAnswers(item.batch) : [];
@@ -64,21 +67,69 @@ export function buildCsv(item: HistoryItem): string {
     .join('\n');
 }
 
+/** Full structured dump of one batch for the JSON export (journal). */
+export function buildJson(item: HistoryItem): string {
+  return `${JSON.stringify(exportJournal(item), null, 2)}\n`;
+}
+
+function exportJournal(item: HistoryItem): unknown {
+  return {
+    batch_id: item.id,
+    model: item.model,
+    created_at: new Date(item.createdAt).toISOString(),
+    status: item.batch?.status ?? 'pending',
+    prompts: item.prompts,
+    answers:
+      item.batch && item.batch.status === 'completed'
+        ? extractBatchAnswers(item.batch)
+        : [],
+  };
+}
+
 export default function BatchesScreen() {
   const theme = useTheme();
+  const { t } = useI18n();
   const safeAreaInsets = useSafeAreaInsets();
   const insets = {
     ...safeAreaInsets,
     bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
   };
   const [promptsText, setPromptsText] = useState('');
-  const [model, setModel] = useState(MODEL_OPTIONS[0].id);
+  const [model, setModel] = useState(OPENROUTER_BATCH_MODEL);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
+  const pollRuns = useRef(new Set<string>());
 
   const updateItem = useCallback((id: string, patch: Partial<HistoryItem>) => {
     setHistory((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
   }, []);
+
+  // Polls a batch in the background without blocking the UI; re-runs when the
+  // app reopens (in-flight batches are resumed from persisted history).
+  const startPolling = useCallback(
+    (id: string, prompts: string[]) => {
+      if (pollRuns.current.has(id)) return;
+      pollRuns.current.add(id);
+      void (async () => {
+        try {
+          const done = await waitForBatch(id, {
+            pollIntervalMs: 10_000,
+            timeoutMs: 120 * 60_000,
+            onPoll: (current) => updateItem(id, { batch: current }),
+          });
+          updateItem(id, { batch: done, error: undefined });
+        } catch (error) {
+          updateItem(id, {
+            error: error instanceof Error ? error.message : String(error),
+          });
+        } finally {
+          pollRuns.current.delete(id);
+        }
+      })();
+    },
+    [updateItem]
+  );
 
   const trackBatch = useCallback(
     (created: OpenRouterBatch, prompts: string[]) => {
@@ -93,23 +144,33 @@ export default function BatchesScreen() {
         },
         ...prev,
       ]);
-      void (async () => {
-        try {
-          const done = await waitForBatch(created.id, {
-            pollIntervalMs: 10_000,
-            timeoutMs: 120 * 60_000,
-            onPoll: (current) => updateItem(created.id, { batch: current }),
-          });
-          updateItem(created.id, { batch: done, error: undefined });
-        } catch (error) {
-          updateItem(created.id, {
-            error: error instanceof Error ? error.message : String(error),
-          });
-        }
-      })();
+      startPolling(created.id, prompts);
     },
-    [updateItem]
+    [startPolling]
   );
+// Restore saved history and resume polling of in-flight batches.
+  useEffect(() => {
+    let cancelled = false;
+    void loadJSON<HistoryItem[]>(HISTORY_STORAGE_KEY, []).then((items) => {
+      if (cancelled) return;
+      setHistory(items);
+      for (const item of items) {
+        if (item.batch && !isBatchTerminal(item.batch) && !item.error) {
+          startPolling(item.id, item.prompts);
+        }
+      }
+      setHydrated(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [startPolling]);
+
+  // Persist history after every change (but not before the initial load).
+  useEffect(() => {
+    if (!hydrated) return;
+    void saveJSON(HISTORY_STORAGE_KEY, history);
+  }, [history, hydrated]);
 
   const handleSubmit = async () => {
     const prompts = promptsText
@@ -118,11 +179,11 @@ export default function BatchesScreen() {
       .filter(Boolean)
       .slice(0, MAX_JOBS);
     if (!prompts.length) {
-      Alert.alert('Пусто', 'Введите хотя бы один вопрос — каждая строка = отдельный запрос.');
+      Alert.alert(t('batches.emptyTitle'), t('batches.emptyBody'));
       return;
     }
     if (!model.trim()) {
-      Alert.alert('Модель', 'Укажите модель.');
+      Alert.alert(t('batches.modelTitle'), t('batches.modelBody'));
       return;
     }
     setSubmitting(true);
@@ -134,7 +195,10 @@ export default function BatchesScreen() {
       trackBatch(created, prompts);
       setPromptsText('');
     } catch (error) {
-      Alert.alert('Не удалось создать батч', error instanceof Error ? error.message : String(error));
+      Alert.alert(
+        t('batches.createError'),
+        error instanceof Error ? error.message : String(error)
+      );
     } finally {
       setSubmitting(false);
     }
@@ -143,9 +207,12 @@ export default function BatchesScreen() {
   const copyTextSafe = async (label: string, text: string) => {
     try {
       await Clipboard.setStringAsync(text);
-      Alert.alert('Скопировано', `${label} — в буфере обмена.`);
+      Alert.alert(t('batches.copyLabel'), t('batches.copyBody', { label }));
     } catch (error) {
-      Alert.alert('Не удалось скопировать', error instanceof Error ? error.message : String(error));
+      Alert.alert(
+        t('batches.copyFail'),
+        error instanceof Error ? error.message : String(error)
+      );
     }
   };
 
@@ -163,14 +230,42 @@ export default function BatchesScreen() {
         return `Q: ${prompt}\nA: ${value}`;
       })
       .join('\n\n');
-    await copyTextSafe('Ответы', text);
+    await copyTextSafe(t('batches.copyAnswersLabel'), text);
   };
 
-  const shareCsv = async (item: HistoryItem) => {
+  const handleSaveOutcome = (outcome: SaveOutcome) => {
+    if (outcome === 'saved') {
+      Alert.alert(t('common.saved'), t('batches.saved'));
+    } else if (outcome === 'shared') {
+      Alert.alert(t('common.saved'), t('batches.shared'));
+    } else if (outcome === 'web') {
+      Alert.alert(t('common.saved'), t('batches.saved'));
+    } else if (outcome === 'canceled') {
+      // user dismissed the system picker, not an error
+    } else {
+      Alert.alert(t('batches.fileFail'));
+    }
+  };
+
+  const saveCsv = async (item: HistoryItem) => {
     try {
-      await Share.share({ title: `${item.id}.csv`, message: buildCsv(item) });
+      const outcome = await saveTextFile(`${item.id}.csv`, buildCsv(item), 'text/csv');
+      handleSaveOutcome(outcome);
     } catch (error) {
-      Alert.alert('Не удалось поделиться', error instanceof Error ? error.message : String(error));
+      Alert.alert(t('batches.fileFail'), error instanceof Error ? error.message : String(error));
+    }
+  };
+
+  const exportJson = async (item: HistoryItem) => {
+    try {
+      const outcome = await saveTextFile(
+        `${item.id}.json`,
+        buildJson(item),
+        'application/json'
+      );
+      handleSaveOutcome(outcome);
+    } catch (error) {
+      Alert.alert(t('batches.fileFail'), error instanceof Error ? error.message : String(error));
     }
   };
 
@@ -179,7 +274,11 @@ export default function BatchesScreen() {
   };
 
   const jobCount = promptsText.split('\n').map((l) => l.trim()).filter(Boolean).length;
-const contentPlatformStyle = Platform.select({
+  const hasActive = history.some(
+    (item) => item.batch && !isBatchTerminal(item.batch) && !item.error
+  );
+
+  const contentPlatformStyle = Platform.select({
     android: {
       paddingTop: insets.top,
       paddingLeft: insets.left,
@@ -199,21 +298,20 @@ const contentPlatformStyle = Platform.select({
       contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
       <ThemedView style={styles.container}>
         <View style={styles.headerRow}>
-          <ThemedText type="subtitle">Батчи</ThemedText>
-          {history.some((item) => item.batch && !/final/.test(item.batch.status)) && (
-            <ActivityIndicator size="small" />
-          )}
+          <ThemedText type="subtitle">{t('batches.title')}</ThemedText>
+          {hasActive && <ActivityIndicator size="small" />}
+          <View style={styles.headerSpacer} />
+          <LanguageToggle />
         </View>
         <ThemedText themeColor="textSecondary" type="small">
-          Одна строка = один запрос. Отправляй пачкой и возвращайся: ответы (и формулы) соберутся
-          прямо здесь.
+          {t('batches.subtitle')}
         </ThemedText>
 
         <ThemedView type="backgroundElement" style={styles.composeCard}>
           <TextInput
             value={promptsText}
             onChangeText={setPromptsText}
-            placeholder={'Вопрос №1\nВопрос №2\nВопрос №3…'}
+            placeholder={t('batches.promptPlaceholder')}
             placeholderTextColor={theme.textSecondary}
             multiline
             style={[
@@ -226,51 +324,14 @@ const contentPlatformStyle = Platform.select({
             ]}
           />
           <ThemedText type="code" themeColor="textSecondary">
-            {jobCount} / {MAX_JOBS} запросов
+            {t('batches.jobCount', { count: jobCount, max: MAX_JOBS })}
           </ThemedText>
 
-          <View style={styles.modelRow}>
-            {MODEL_OPTIONS.map((option) => {
-              const selected = model === option.id;
-              return (
-                <Pressable
-                  key={option.id}
-                  onPress={() => setModel(option.id)}
-                  style={({ pressed }) => [
-                    styles.modelChip,
-                    selected && styles.modelChipSelected,
-                    pressed && styles.pressedDim,
-                  ]}>
-                  <ThemedText type="smallBold" themeColor={selected ? 'text' : 'textSecondary'}>
-                    {option.label}
-                  </ThemedText>
-                  <ThemedText type="code" themeColor="textSecondary">
-                    {option.price}
-                  </ThemedText>
-                </Pressable>
-              );
-            })}
-          </View>
-          <TextInput
-            value={model}
-            onChangeText={setModel}
-            placeholder="Или впиши свою модель (например, без :batch)"
-            placeholderTextColor={theme.textSecondary}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={[
-              styles.modelInput,
-              {
-                color: theme.text,
-                borderColor: theme.backgroundSelected,
-                backgroundColor: theme.background,
-              },
-            ]}
-          />
+          <ModelChips mode="batch" value={model} onChange={setModel} visibleCount={6} />
 
           <Pressable
             disabled={submitting || jobCount === 0}
-            onPress={handleSubmit}
+            onPress={() => void handleSubmit()}
             style={({ pressed }) => [
               styles.submitButton,
               (pressed || submitting || jobCount === 0) && styles.pressedDim,
@@ -279,7 +340,7 @@ const contentPlatformStyle = Platform.select({
               <ActivityIndicator size="small" color="#ffffff" />
             ) : (
               <ThemedText type="smallBold" themeColor="backgroundElement">
-                Отправить батч
+                {t('batches.send')}
               </ThemedText>
             )}
           </Pressable>
@@ -288,7 +349,7 @@ const contentPlatformStyle = Platform.select({
         <View style={styles.history}>
           {history.length === 0 ? (
             <ThemedText themeColor="textSecondary" type="small" style={styles.emptyHint}>
-              История пуста — отправь первый батч.
+              {t('batches.historyEmpty')}
             </ThemedText>
           ) : (
             history.map((item) => (
@@ -296,8 +357,9 @@ const contentPlatformStyle = Platform.select({
                 key={item.id}
                 item={item}
                 onCopyAll={() => copyAllAnswers(item)}
-                onShareCsv={() => shareCsv(item)}
-                onCopyPrompt={(prompt) => copyTextSafe('Вопрос', prompt)}
+                onSaveCsv={() => saveCsv(item)}
+                onExportJson={() => exportJson(item)}
+                onCopyPrompt={(prompt) => copyTextSafe(t('batches.copyPromptLabel'), prompt)}
                 onRemove={() => removeItem(item.id)}
               />
             ))
@@ -310,12 +372,21 @@ const contentPlatformStyle = Platform.select({
 type BatchCardProps = {
   item: HistoryItem;
   onCopyAll: () => void;
-  onShareCsv: () => void;
+  onSaveCsv: () => void;
+  onExportJson: () => void;
   onCopyPrompt: (prompt: string) => void;
   onRemove: () => void;
 };
 
-function BatchCard({ item, onCopyAll, onShareCsv, onCopyPrompt, onRemove }: BatchCardProps) {
+function BatchCard({
+  item,
+  onCopyAll,
+  onSaveCsv,
+  onExportJson,
+  onCopyPrompt,
+  onRemove,
+}: BatchCardProps) {
+  const { t } = useI18n();
   const status = item.error ? 'error' : item.batch?.status ?? 'pending';
   const completed = item.batch?.status === 'completed';
   const answers = item.batch && completed ? extractBatchAnswers(item.batch) : [];
@@ -338,15 +409,15 @@ function BatchCard({ item, onCopyAll, onShareCsv, onCopyPrompt, onRemove }: Batc
             completed ? styles.statusOk : status === 'error' ? styles.statusErr : null,
           ]}>
           <ThemedText type="code" themeColor="text">
-            {status}
+            {t(`status.${status}` as never)}
           </ThemedText>
         </View>
       </View>
 
       {counts ? (
         <ThemedText type="code" themeColor="textSecondary">
-          {counts.completed}/{counts.total} готово
-          {counts.failed > 0 ? ` · ${counts.failed} ошибок` : ''}
+          {t('batches.doneCount', { completed: counts.completed, total: counts.total })}
+          {counts.failed > 0 ? t('batches.errorsCount', { failed: counts.failed }) : ''}
         </ThemedText>
       ) : null}
 
@@ -377,7 +448,7 @@ function BatchCard({ item, onCopyAll, onShareCsv, onCopyPrompt, onRemove }: Batc
                   <MathAnswer text={answer.answer ?? ''} />
                 ) : (
                   <ThemedText type="small" style={styles.errorText}>
-                    ❌ {answer.error ?? 'без ответа'}
+                    ❌ {answer.error ?? t('batches.noAnswer')}
                   </ThemedText>
                 )}
               </View>
@@ -392,20 +463,28 @@ function BatchCard({ item, onCopyAll, onShareCsv, onCopyPrompt, onRemove }: Batc
           onPress={onCopyAll}
           style={[styles.actionButton, !completed && styles.pressedDim]}>
           <ThemedText type="small" themeColor={completed ? 'textSecondary' : undefined}>
-            Копировать все
+            {t('batches.copyAll')}
           </ThemedText>
         </Pressable>
         <Pressable
           disabled={!completed}
-          onPress={onShareCsv}
+          onPress={onSaveCsv}
           style={[styles.actionButton, !completed && styles.pressedDim]}>
           <ThemedText type="small" themeColor={completed ? 'textSecondary' : undefined}>
-            CSV · поделиться
+            {t('batches.saveCsv')}
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          disabled={!completed}
+          onPress={onExportJson}
+          style={[styles.actionButton, !completed && styles.pressedDim]}>
+          <ThemedText type="small" themeColor={completed ? 'textSecondary' : undefined}>
+            {t('batches.exportJson')}
           </ThemedText>
         </Pressable>
         <Pressable onPress={onRemove} style={styles.actionButton}>
           <ThemedText type="small" themeColor="textSecondary">
-            Удалить
+            {t('batches.delete')}
           </ThemedText>
         </Pressable>
       </View>
@@ -430,6 +509,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.two,
   },
+  headerSpacer: {
+    flex: 1,
+  },
   composeCard: {
     borderRadius: Spacing.four,
     padding: Spacing.three,
@@ -442,31 +524,6 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     fontSize: 15,
     textAlignVertical: 'top',
-  },
-  modelRow: {
-    flexDirection: 'row',
-    gap: Spacing.two,
-    flexWrap: 'wrap',
-  },
-  modelChip: {
-    flex: 1,
-    minWidth: 150,
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    padding: Spacing.two,
-    gap: 2,
-    borderColor: 'transparent',
-  },
-  modelChipSelected: {
-    borderColor: '#3c87f7',
-    backgroundColor: 'rgba(60,135,247,0.15)',
-  },
-  modelInput: {
-    borderWidth: 1,
-    borderRadius: Spacing.two,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
-    fontSize: 13,
   },
   submitButton: {
     backgroundColor: '#3c87f7',
@@ -531,6 +588,7 @@ const styles = StyleSheet.create({
   },
   cardActions: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: Spacing.three,
     marginTop: Spacing.one,
   },

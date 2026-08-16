@@ -56,7 +56,6 @@ export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: n
             <MathView
               tex={stripDelimiters(segment.value)}
               fontSize={Math.max(12, Math.round(fontSize * 0.95))}
-              style={{ height: Math.max(56, Math.round(fontSize * 3.4)) }}
             />
           </View>
         ) : (

@@ -77,6 +77,9 @@ const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
  */
 const OPENROUTER_BATCH_URL = 'https://openrouter.ai/api/beta/batches';
 
+/** Full catalog of models available on OpenRouter (used for pickers). */
+const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+
 /** Cheaper batch model: 50% off the standard gemini-3.7-flash price. */
 export const OPENROUTER_BATCH_MODEL =
   process.env.EXPO_PUBLIC_OPENROUTER_BATCH_MODEL ?? 'google/gemini-3.7-flash:batch';
@@ -480,4 +483,59 @@ export function extractBatchAnswers(batch: OpenRouterBatch): BatchOutcome[] {
     const content = response.body?.choices?.[0]?.message?.content ?? '';
     return { custom_id: customId, ok: true, answer: content, status: 200 };
   });
+}
+
+/** A model entry as returned by `GET /api/v1/models` (subset of fields). */
+export type OpenRouterModelInfo = {
+  id: string;
+  name: string;
+  context_length?: number;
+  pricing?: { prompt?: number; completion?: number };
+};
+
+/** True when a model id targets the (cheaper) Batch API (`:batch` suffix). */
+export function isBatchModelId(id: string): boolean {
+  return id.trim().toLowerCase().endsWith(':batch');
+}
+
+/**
+ * Fetches the list of models available on OpenRouter for the current key.
+ * Batch-capable models (`…:batch`) are included in the same response, which
+ * lets the UI build separate pickers for live chat and for batches.
+ */
+export async function listModels(): Promise<OpenRouterModelInfo[]> {
+  const key = await resolveApiKey();
+  if (!key) {
+    throw new OpenRouterError(
+      'No OpenRouter API key configured. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
+    );
+  }
+  const response = await fetch(OPENROUTER_MODELS_URL, {
+    headers: { Authorization: `Bearer ${key}` },
+  });
+  if (!response.ok) await parseError(response);
+
+  const payload = (await response.json()) as { data?: Array<Record<string, unknown>> };
+  const entries = payload.data ?? [];
+  return entries
+    .filter((entry) => typeof entry?.id === 'string')
+    .map((entry) => ({
+      id: entry.id as string,
+      name: typeof entry.name === 'string' && entry.name ? (entry.name as string) : (entry.id as string),
+      context_length:
+        typeof entry.context_length === 'number' ? entry.context_length : undefined,
+      pricing:
+        typeof entry.pricing === 'object' && entry.pricing !== null
+          ? {
+              prompt: numberFrom((entry.pricing as Record<string, unknown>).prompt),
+              completion: numberFrom((entry.pricing as Record<string, unknown>).completion),
+            }
+          : undefined,
+    }))
+    .filter((model) => model.id.length > 0);
+}
+
+function numberFrom(value: unknown): number | undefined {
+  const parsed = typeof value === 'string' ? Number(value) : value;
+  return typeof parsed === 'number' && Number.isFinite(parsed) ? parsed : undefined;
 }

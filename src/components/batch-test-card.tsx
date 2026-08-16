@@ -13,6 +13,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { useI18n } from '@/i18n';
 import {
   clearStoredApiKey,
   getStoredApiKey,
@@ -45,6 +46,7 @@ type Busy = 'idle' | 'saving' | 'running' | 'done';
 
 export function BatchTestCard({ style }: { style?: ViewStyle }) {
   const theme = useTheme();
+  const { t } = useI18n();
   const [inputKey, setInputKey] = useState('');
   const [envKey, setEnvKey] = useState<string | undefined>();
   const [storedKey, setStoredKey] = useState<string | null>(null);
@@ -66,7 +68,7 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
     const key = inputKey.trim();
     if (!key) return;
     if (!isSecureStorageAvailable()) {
-      Alert.alert('Недоступно', 'Защищённое хранилище работает только на устройстве (не web).');
+      Alert.alert(t('common.failed'), t('card.secureUnavailable'));
       return;
     }
     setBusy('saving');
@@ -75,45 +77,53 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
     if (saved) {
       setInputKey('');
       await refreshKeyState();
-      setStatusText('Ключ сохранён в защищённом хранилище (Android Keystore).');
+      setStatusText(t('card.keySaved'));
     } else {
-      Alert.alert('Ошибка', 'Не удалось сохранить ключ в защищённом хранилище.');
+      Alert.alert(t('common.failed'), t('card.keySavedFail'));
     }
   };
 
   const handleDeleteKey = async () => {
     await clearStoredApiKey();
     await refreshKeyState();
-    setStatusText('Сохранённый на устройстве ключ удалён.');
+    setStatusText(t('card.keyDeleted'));
   };
 
   const handleRunBatch = async () => {
     setAnswers([]);
     setBatch(null);
-    setStatusText('Создаю batch…');
+    setStatusText(t('card.creating'));
     setBusy('running');
     try {
       const created = await createBatch(DEMO_JOBS);
       setBatch(created);
-      setStatusText(`Батч ${created.id} создан (${created.status}). Жду выполнения…`);
+      setStatusText(t('card.batchCreated', { id: created.id, status: created.status }));
       const done = await waitForBatch(created.id, {
         pollIntervalMs: 10_000,
         timeoutMs: 120 * 60_000,
         onPoll: (current) =>
           setStatusText(
-            `Батч ${current.id}: ${current.status} ` +
-              `(${current.request_counts.completed}/${current.request_counts.total} готово)`
+            t('card.batchPolling', {
+              id: current.id,
+              status: current.status,
+              completed: current.request_counts.completed,
+              total: current.request_counts.total,
+            })
           ),
       });
       setBatch(done);
       setAnswers(extractBatchAnswers(done));
       setStatusText(
-        `Батч завершён: ${done.status}. Всего запросов: ${done.request_counts.total}, ошибок: ${done.request_counts.failed}.`
+        t('card.batchDone', {
+          status: done.status,
+          total: done.request_counts.total,
+          failed: done.request_counts.failed,
+        })
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setStatusText(`Ошибка: ${message}`);
-      Alert.alert('Ошибка батча', message);
+      setStatusText(t('card.errorPrefix', { message }));
+      Alert.alert(t('card.batchError'), message);
     } finally {
       setBusy('idle');
     }
@@ -128,26 +138,23 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
   return (
     <ThemedView type="backgroundElement" style={[styles.card, style]}>
       <View style={styles.rowBetween}>
-        <ThemedText type="smallBold">OpenRouter: ключ и батчи</ThemedText>
+        <ThemedText type="smallBold">{t('card.title')}</ThemedText>
         {busy === 'running' && <ActivityIndicator size="small" />}
       </View>
 
       <ThemedText themeColor="textSecondary" type="small">
-        Модель батча: <ThemedText type="code">{OPENROUTER_BATCH_MODEL}</ThemedText> —
-        примерно в 2 раза дешевле обычной модели; живёт до 24 ч.
+        {t('card.batchModelNote', { model: OPENROUTER_BATCH_MODEL })}
       </ThemedText>
 
       {envKey ? (
         <ThemedText themeColor="textSecondary" type="small">
-          Ключ из бандла (dev): <ThemedText type="code">EXPO_PUBLIC_*</ThemedText> — виден
-          всем, кто скачает APK.
+          {t('card.envKeyNote', { name: 'EXPO_PUBLIC_*' })}
         </ThemedText>
       ) : null}
 
       {storedKey ? (
         <ThemedText themeColor="textSecondary" type="small">
-          Ключ на устройстве: <ThemedText type="code">{masked}</ThemedText> (Android
-          Keystore).
+          {t('card.deviceKeyNote', { masked: masked ?? '' })}
         </ThemedText>
       ) : null}
 
@@ -155,7 +162,7 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
         <TextInput
           value={inputKey}
           onChangeText={setInputKey}
-          placeholder="Вставьте свой ключ sk-or-…"
+          placeholder={t('card.keyPlaceholder')}
           placeholderTextColor={theme.textSecondary}
           secureTextEntry
           autoCapitalize="none"
@@ -180,7 +187,7 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
             <ActivityIndicator size="small" color={theme.background} />
           ) : (
             <ThemedText type="smallBold" themeColor="text">
-              {storedKey ? 'Изменить' : 'Сохранить'}
+              {storedKey ? t('card.change') : t('card.save')}
             </ThemedText>
           )}
         </Pressable>
@@ -196,7 +203,7 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
             !storedKey && styles.buttonDisabled,
           ]}>
           <ThemedText type="small" themeColor={storedKey ? 'textSecondary' : undefined}>
-            Удалить ключ
+            {t('card.keyDelete')}
           </ThemedText>
         </Pressable>
         <Pressable
@@ -207,7 +214,7 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
             (pressed || busy === 'running' || !hasAnyKey) && styles.buttonDisabled,
           ]}>
           <ThemedText type="smallBold" themeColor="backgroundElement">
-            Запустить тест-батч
+            {t('card.runTest')}
           </ThemedText>
         </Pressable>
       </View>

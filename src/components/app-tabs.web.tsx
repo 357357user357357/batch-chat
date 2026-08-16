@@ -10,25 +10,31 @@ import { SymbolView } from 'expo-symbols';
 import { Pressable, useColorScheme, View, StyleSheet } from 'react-native';
 
 import { ExternalLink } from './external-link';
+import { LanguageToggle } from './language-toggle';
 import { ThemedText } from './themed-text';
 import { ThemedView } from './themed-view';
 
 import { Colors, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useI18n } from '@/i18n';
 
 export default function AppTabs() {
+  const { t } = useI18n();
   return (
     <Tabs>
       <TabSlot style={{ height: '100%' }} />
       <TabList asChild>
         <CustomTabList>
           <TabTrigger name="home" href="/" asChild>
-            <TabButton>Home</TabButton>
+            <TabButton>{t('tab.home')}</TabButton>
           </TabTrigger>
-          <TabTrigger name="explore" href="/explore" asChild>
-            <TabButton>Explore</TabButton>
+          <TabTrigger name="chat" href="/chat" asChild>
+            <TabButton>{t('tab.chat')}</TabButton>
           </TabTrigger>
           <TabTrigger name="batches" href="/batches" asChild>
-            <TabButton>Батчи</TabButton>
+            <TabButton>{t('tab.batches')}</TabButton>
+          </TabTrigger>
+          <TabTrigger name="explore" href="/explore" asChild>
+            <TabButton>{t('tab.explore')}</TabButton>
           </TabTrigger>
         </CustomTabList>
       </TabList>
@@ -62,6 +68,8 @@ export function CustomTabList(props: TabListProps) {
         </ThemedText>
 
         {props.children}
+
+        <LanguageToggle />
 
         <ExternalLink href="https://docs.expo.dev" asChild>
           <Pressable style={styles.externalPressable}>

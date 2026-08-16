@@ -1,56 +1,52 @@
-# Welcome to your Expo app 👋
+# Fable5 🧮
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+Android (and web) app for asking batches of questions through the
+[OpenRouter Batch API](https://openrouter.ai/docs/batch-quickstart) — one line =
+one request, ~50% off the model's price — plus a live **Chat** tab.
 
-## Get started
+## Download the APK
 
-1. Install dependencies
+The latest standalone Android build (JS embedded, arm64-v8a, installable without
+Metro or Expo Go) is attached to the GitHub release:
 
-   ```bash
-   npm install
-   ```
+- **https://github.com/357357user357357/my-fable5-app/releases**
 
-2. Start the app
+Download `fable5-app.apk` and open it on the phone to install. The release is
+rebuilt automatically on every push to `main` (see
+`.github/workflows/android.yml`).
 
-   ```bash
-   npx expo start
-   ```
+## Features
 
-In the output, you'll find options to open the app in a
+- **Language**: English (default) ⇄ Russian — the EN|RU toggle lives on the
+  main screens and remembers your choice.
+- **Live chat**: instant answers from any OpenRouter model you pick from the
+  live catalog (the list loads from `openrouter.ai/api/v1/models`, tap
+  `refresh` to re-fetch). LaTeX answers render with MathJax.
+- **Batches**: compose up to 30 questions, pick a `…:batch` model from the same
+  catalog, and watch them complete in the background — even across restarts
+  (history is persisted on-device and in-flight batches resume automatically).
+- **Export**: every finished batch can be saved as `.csv` or a full JSON
+  journal (Android opens the system “Save” dialog, other platforms use the
+  share sheet).
+- Your OpenRouter key is stored in the device's secure storage (Android
+  Keystore), never in the bundle — unless you put it in `.env.local` for
+  development (gitignored).
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+## Get started (dev)
 
 ```bash
-npm run reset-project
+npm install
+npx expo start
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+- Android device build: `npx expo run:android`
+- Web: press `w` in the Expo terminal
 
-### Other setup steps
+## Under the hood
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- `src/app/batches.tsx` — the batch composer + history + export
+- `src/app/chat.tsx` — the live chat screen
+- `src/components/math-view.tsx` — MathJax LaTeX rendering with auto-height
+  (no more clipped formulas)
+- `src/services/openrouter.ts` — OpenRouter sync + batch + models catalog
+- `src/i18n/` — English/Russian strings (default: English)

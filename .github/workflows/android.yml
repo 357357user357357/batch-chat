@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: write
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -34,7 +37,7 @@ jobs:
         run: cargo ndk -t arm64-v8a -P 21 -o ../android/src/main/jniLibs build --release
 
   android-apk:
-    name: Android APK (assembleDebug)
+    name: Android APK (assembleRelease) + GitHub Release
     needs: rust-android
     runs-on: ubuntu-latest
     steps:
@@ -68,12 +71,30 @@ jobs:
       - name: Expo prebuild (android)
         run: npx expo prebuild --platform android --no-install
 
-      - name: Gradle assembleDebug (arm64-v8a)
-        run: ./gradlew app:assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon
+      # Release build embeds the JS bundle (unlike debug, it does not need a
+      # Metro server), so the APK works as a standalone install.
+      - name: Gradle assembleRelease (arm64-v8a)
+        run: ./gradlew app:assembleRelease -PreactNativeArchitectures=arm64-v8a --no-daemon
         working-directory: android
 
-      - name: Upload debug APK
+      - name: Rename APK
+        run: cp android/app/build/outputs/apk/release/app-release.apk fable5-app.apk
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: app-debug-apk
-          path: android/app/build/outputs/apk/debug/app-debug.apk
+          name: fable5-app-release-apk
+          path: fable5-app.apk
+
+      # Publishes to https://github.com/357357user357357/my-fable5-app/releases
+      # (creates the release on first push, then keeps it up to date).
+      - name: Create / update GitHub Release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create v1.0.0 fable5-app.apk \
+            --target "${{ github.sha }}" \
+            --title "Fable5 ${{ github.sha }}" \
+            --notes "Latest Android build (standalone APK, arm64-v8a). Install: download and open on the phone." \
+          || gh release upload v1.0.0 fable5-app.apk --clobber

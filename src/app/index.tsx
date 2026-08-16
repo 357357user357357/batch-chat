@@ -1,52 +1,53 @@
 import * as Device from 'expo-device';
-import { Platform, StyleSheet } from 'react-native';
+import { Platform, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnimatedIcon } from '@/components/animated-icon';
 import { BatchTestCard } from '@/components/batch-test-card';
 import { HintRow } from '@/components/hint-row';
+import { LanguageToggle } from '@/components/language-toggle';
 import { MathView } from '@/components/math-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { useI18n } from '@/i18n';
 import MyRustModule from '../../modules/my-rust-module/src/MyRustModule';
 
-function getDevMenuHint() {
-  if (Platform.OS === 'web') {
-    return <ThemedText type="small">use browser devtools</ThemedText>;
-  }
-  if (Device.isDevice) {
-    return (
-      <ThemedText type="small">
-        shake device or press <ThemedText type="code">m</ThemedText> in terminal
-      </ThemedText>
-    );
-  }
-  const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-  return (
-    <ThemedText type="small">
-      press <ThemedText type="code">{shortcut}</ThemedText>
-    </ThemedText>
-  );
-}
-
 export default function HomeScreen() {
+  const { t } = useI18n();
   const rustMessage =
-    Platform.OS === 'web' ? 'MyRustModule is not available on web' : MyRustModule.hello();
+    Platform.OS === 'web' ? t('home.rustUnavailable') : MyRustModule.hello();
+
+  let devHint: string;
+  if (Platform.OS === 'web') {
+    devHint = t('home.webDevtools');
+  } else if (Device.isDevice) {
+    devHint = t('home.shakeDevice');
+  } else {
+    const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
+    devHint = t('home.pressShortcut', { shortcut });
+  }
 
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
+        <View style={styles.topRow}>
+          <ThemedText type="code" themeColor="textSecondary">
+            {t('lang.tagline')}
+          </ThemedText>
+          <LanguageToggle />
+        </View>
+
         <ThemedView style={styles.heroSection}>
           <AnimatedIcon />
           <ThemedText type="title" style={styles.title}>
-            Welcome to&nbsp;Expo
+            {t('home.heroTitle')}
           </ThemedText>
         </ThemedView>
 
         <ThemedText type="code" style={styles.code}>
-          get started
+          {t('home.getStarted')}
         </ThemedText>
 
         <ThemedText type="default" style={styles.rustMessage}>
@@ -59,16 +60,17 @@ export default function HomeScreen() {
           fontSize={16}
         />
 
-<BatchTestCard style={styles.batchCard} />
+        <BatchTestCard style={styles.batchCard} />
+
         <ThemedView type="backgroundElement" style={styles.stepContainer}>
           <HintRow
-            title="Try editing"
-            hint={<ThemedText type="code">src/app/index.tsx</ThemedText>}
+            title={t('home.tryEditing')}
+            hint={<ThemedText type="code">{t('home.deployHint')}</ThemedText>}
           />
-          <HintRow title="Dev tools" hint={getDevMenuHint()} />
+          <HintRow title={t('home.devTools')} hint={<ThemedText type="small">{devHint}</ThemedText>} />
           <HintRow
-            title="Fresh start"
-            hint={<ThemedText type="code">npm run reset-project</ThemedText>}
+            title={t('home.freshStart')}
+            hint={<ThemedText type="code">{t('home.resetHint')}</ThemedText>}
           />
         </ThemedView>
 
@@ -92,6 +94,13 @@ const styles = StyleSheet.create({
     paddingBottom: BottomTabInset + Spacing.three,
     maxWidth: MaxContentWidth,
   },
+  topRow: {
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Spacing.two,
+  },
   heroSection: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -111,7 +120,6 @@ const styles = StyleSheet.create({
   },
   math: {
     alignSelf: 'stretch',
-    height: 72,
     marginHorizontal: Spacing.three,
   },
   batchCard: {
