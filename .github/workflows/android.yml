@@ -1,0 +1,79 @@
+name: Android CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust-android:
+    name: Rust → libnative_rust.so (arm64-v8a)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: modules/my-rust-module/rust
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: modules/my-rust-module/rust
+
+      - name: Install cargo-ndk
+        run: cargo install cargo-ndk --locked --version 4.1.2
+
+      - name: Build .so via cargo-ndk (API 21)
+        run: cargo ndk -t arm64-v8a -P 21 -o ../android/src/main/jniLibs build --release
+
+  android-apk:
+    name: Android APK (assembleDebug)
+    needs: rust-android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Setup Android SDK / NDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager --install "platforms;android-36" \
+            "build-tools;36.0.0" \
+            "ndk;27.1.12297006" \
+            "cmake;3.22.1"
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Expo prebuild (android)
+        run: npx expo prebuild --platform android --no-install
+
+      - name: Gradle assembleDebug (arm64-v8a)
+        run: ./gradlew app:assembleDebug -PreactNativeArchitectures=arm64-v8a --no-daemon
+        working-directory: android
+
+      - name: Upload debug APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-debug-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk

@@ -4,6 +4,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnimatedIcon } from '@/components/animated-icon';
 import { HintRow } from '@/components/hint-row';
+import { MathView } from '@/components/math-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
@@ -50,6 +51,12 @@ export default function HomeScreen() {
         <ThemedText type="default" style={styles.rustMessage}>
           {rustMessage}
         </ThemedText>
+
+        <MathView
+          tex={'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}'}
+          style={styles.math}
+          fontSize={16}
+        />
 
         <ThemedView type="backgroundElement" style={styles.stepContainer}>
           <HintRow
@@ -99,6 +106,11 @@ const styles = StyleSheet.create({
   rustMessage: {
     textAlign: 'center',
     fontVariant: ['tabular-nums'],
+  },
+  math: {
+    alignSelf: 'stretch',
+    height: 72,
+    marginHorizontal: Spacing.three,
   },
   stepContainer: {
     gap: Spacing.three,
