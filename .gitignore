@@ -33,6 +33,9 @@ yarn-error.*
 # local env files
 .env*.local
 
+# locally/CI-produced release artifacts
+/fable5-app.apk
+
 # typescript
 *.tsbuildinfo
 
