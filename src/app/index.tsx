@@ -3,6 +3,7 @@ import { Platform, StyleSheet } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnimatedIcon } from '@/components/animated-icon';
+import { BatchTestCard } from '@/components/batch-test-card';
 import { HintRow } from '@/components/hint-row';
 import { MathView } from '@/components/math-view';
 import { ThemedText } from '@/components/themed-text';
@@ -58,6 +59,7 @@ export default function HomeScreen() {
           fontSize={16}
         />
 
+<BatchTestCard style={styles.batchCard} />
         <ThemedView type="backgroundElement" style={styles.stepContainer}>
           <HintRow
             title="Try editing"
@@ -110,6 +112,9 @@ const styles = StyleSheet.create({
   math: {
     alignSelf: 'stretch',
     height: 72,
+    marginHorizontal: Spacing.three,
+  },
+  batchCard: {
     marginHorizontal: Spacing.three,
   },
   stepContainer: {
