@@ -2,6 +2,8 @@ import { useMemo } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 import { WebView } from 'react-native-webview';
 
+import { useTheme } from '@/hooks/use-theme';
+
 export type MathViewProps = {
   /** LaTeX (TeX) expression, e.g. `x = \\frac{-b \\pm \\sqrt{b^2-4ac}}{2a}` */
   tex: string;
@@ -71,8 +73,13 @@ function buildHtml(tex: string, fontSize: number, color: string): string {
  * Emits `mathjax:ready` / `mathjax:error:<message>` through `postMessage`,
  * which are surfaced via the `onReady` prop.
  */
-export function MathView({ tex, style, fontSize = 18, color = '#111827', onReady }: MathViewProps) {
-  const html = useMemo(() => buildHtml(tex, fontSize, color), [tex, fontSize, color]);
+export function MathView({ tex, style, fontSize = 18, color, onReady }: MathViewProps) {
+  const theme = useTheme();
+  // Default to the active app theme's text color so the formula stays visible
+  // in both light and dark mode (a hardcoded dark color becomes invisible on
+  // the dark background).
+  const resolvedColor = color ?? theme.text;
+  const html = useMemo(() => buildHtml(tex, fontSize, resolvedColor), [tex, fontSize, resolvedColor]);
 
   return (
     <View style={[styles.container, style]}>
