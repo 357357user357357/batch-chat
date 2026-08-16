@@ -1,0 +1,24 @@
+[package]
+name = "native_rust"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "native_rust"
+crate-type = ["staticlib", "cdylib"]
+
+[dependencies]
+uniffi = { version = "0.32", features = ["cli", "build"] }
+
+[build-dependencies]
+uniffi = { version = "0.32", features = ["build"] }
+
+[[bin]]
+name = "uniffi-bindgen"
+path = "uniffi-bindgen.rs"
+
+[profile.release]
+lto = true
+strip = true

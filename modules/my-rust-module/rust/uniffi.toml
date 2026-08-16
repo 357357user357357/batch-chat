@@ -1,0 +1,5 @@
+[bindings.kotlin]
+# Make the generated Kotlin bindings load `libnative_rust.so`
+# (matches the cdylib name produced by this crate) instead of the
+# UniFFI default `uniffi_math`.
+cdylib_name = "native_rust"

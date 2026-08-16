@@ -1,0 +1,23 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'expo.modules.myrustmodule'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.myrustmodule"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+  lintOptions {
+    abortOnError false
+  }
+}
+
+dependencies {
+  // JNA is required by the UniFFI-generated Kotlin bindings (uniffi.math).
+  implementation 'net.java.dev.jna:jna:5.19.0@aar'
+}

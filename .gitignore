@@ -41,3 +41,10 @@ example
 # generated native folders
 /ios
 /android
+
+# Rust build artifacts of the local native module
+**/rust/target/
+**/rust/generated/
+
+# Gradle build intermediates of the local module
+**/android/build/

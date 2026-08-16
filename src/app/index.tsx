@@ -8,6 +8,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import MyRustModule from '../../modules/my-rust-module/src/MyRustModule';
 
 function getDevMenuHint() {
   if (Platform.OS === 'web') {
@@ -29,6 +30,9 @@ function getDevMenuHint() {
 }
 
 export default function HomeScreen() {
+  const rustMessage =
+    Platform.OS === 'web' ? 'MyRustModule is not available on web' : MyRustModule.hello();
+
   return (
     <ThemedView style={styles.container}>
       <SafeAreaView style={styles.safeArea}>
@@ -41,6 +45,10 @@ export default function HomeScreen() {
 
         <ThemedText type="code" style={styles.code}>
           get started
+        </ThemedText>
+
+        <ThemedText type="default" style={styles.rustMessage}>
+          {rustMessage}
         </ThemedText>
 
         <ThemedView type="backgroundElement" style={styles.stepContainer}>
@@ -87,6 +95,10 @@ const styles = StyleSheet.create({
   },
   code: {
     textTransform: 'uppercase',
+  },
+  rustMessage: {
+    textAlign: 'center',
+    fontVariant: ['tabular-nums'],
   },
   stepContainer: {
     gap: Spacing.three,
