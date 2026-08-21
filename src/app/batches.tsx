@@ -100,7 +100,9 @@ export default function BatchesScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   const pollRuns = useRef(new Set<string>());
+  const selectedItem = history.find((item) => item.id === selectedId) ?? null;
 
   const updateItem = useCallback((id: string, patch: Partial<HistoryItem>) => {
     setHistory((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
@@ -217,12 +219,18 @@ export default function BatchesScreen() {
     }
   };
 
+  // Copies the raw answer text, LaTeX formulas (`$$…$$`) included.
+  const copyPrompt = (prompt: string) =>
+    copyTextSafe(t('batches.copyPromptLabel'), prompt);
+  const copyAnswer = (answer: string) =>
+    copyTextSafe(t('batches.copyAnswersLabel'), answer);
+
   const copyAllAnswers = async (item: HistoryItem) => {
     if (!item.batch) return;
     const answers = extractBatchAnswers(item.batch);
     const text = item.prompts
       .map((prompt, index) => {
-        const answer = answers[index];
+        const answer = answers.find((a) => a.custom_id === `req-${index + 1}`);
         const value = answer
           ? answer.ok
             ? (answer.answer ?? '')
@@ -291,6 +299,35 @@ export default function BatchesScreen() {
       paddingBottom: Spacing.four,
     },
   });
+
+  if (selectedItem) {
+    return (
+      <ScrollView
+        style={[styles.scrollView, { backgroundColor: theme.background }]}
+        contentInset={insets}
+        contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
+        <ThemedView style={styles.container}>
+          <View style={styles.headerRow}>
+            <Pressable onPress={() => setSelectedId(null)} hitSlop={8} style={styles.backButton}>
+              <ThemedText type="smallBold" themeColor="textSecondary">
+                ‹ {t('batches.back')}
+              </ThemedText>
+            </Pressable>
+            <View style={styles.headerSpacer} />
+          </View>
+          <BatchCard
+            item={selectedItem}
+            onCopyAll={() => copyAllAnswers(selectedItem)}
+            onSaveCsv={() => saveCsv(selectedItem)}
+            onExportJson={() => exportJson(selectedItem)}
+            onCopyPrompt={copyPrompt}
+            onCopyAnswer={copyAnswer}
+            onRemove={() => removeItem(selectedItem.id)}
+          />
+        </ThemedView>
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView
@@ -370,17 +407,37 @@ export default function BatchesScreen() {
               {t('batches.historyEmpty')}
             </ThemedText>
           ) : (
-            history.map((item) => (
-              <BatchCard
-                key={item.id}
-                item={item}
-                onCopyAll={() => copyAllAnswers(item)}
-                onSaveCsv={() => saveCsv(item)}
-                onExportJson={() => exportJson(item)}
-                onCopyPrompt={(prompt) => copyTextSafe(t('batches.copyPromptLabel'), prompt)}
-                onRemove={() => removeItem(item.id)}
-              />
-            ))
+            history.map((item) => {
+              const status = item.error ? 'error' : item.batch?.status ?? 'pending';
+              const completed = item.batch?.status === 'completed';
+              return (
+                <Pressable
+                  key={item.id}
+                  onPress={() => setSelectedId(item.id)}
+                  style={[styles.dialogCard, { borderColor: theme.backgroundSelected }]}>
+                  <View style={styles.dialogRow}>
+                    <ThemedText type="smallBold" numberOfLines={1} style={styles.dialogTitle}>
+                      {item.model}
+                    </ThemedText>
+                    <ThemedView
+                      style={[
+                        styles.statusBadge,
+                        completed ? styles.statusOk : status === 'error' ? styles.statusErr : null,
+                      ]}>
+                      <ThemedText type="code" themeColor="textSecondary">
+                        {t(`status.${status}` as never)}
+                      </ThemedText>
+                    </ThemedView>
+                  </View>
+                  <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
+                    {item.prompts[0] ?? ''}
+                  </ThemedText>
+                  <ThemedText type="code" themeColor="textSecondary">
+                    {formatTime(item.createdAt)} · {t('batches.questionsCount', { count: item.prompts.length })}
+                  </ThemedText>
+                </Pressable>
+              );
+            })
           )}
         </View>
       </ThemedView>
@@ -393,6 +450,7 @@ type BatchCardProps = {
   onSaveCsv: () => void;
   onExportJson: () => void;
   onCopyPrompt: (prompt: string) => void;
+  onCopyAnswer: (answer: string) => void;
   onRemove: () => void;
 };
 
@@ -402,6 +460,7 @@ function BatchCard({
   onSaveCsv,
   onExportJson,
   onCopyPrompt,
+  onCopyAnswer,
   onRemove,
 }: BatchCardProps) {
   const { t } = useI18n();
@@ -463,7 +522,17 @@ function BatchCard({
                   </Pressable>
                 </View>
                 {answer.ok ? (
-                  <MathAnswer text={answer.answer ?? ''} />
+                  <>
+                    <MathAnswer text={answer.answer ?? ''} />
+                    <Pressable
+                      onPress={() => onCopyAnswer(answer.answer ?? '')}
+                      hitSlop={8}
+                      style={styles.copyAnswerButton}>
+                      <ThemedText type="code" themeColor="textSecondary">
+                        ⧉ {t('batches.copyAnswer')}
+                      </ThemedText>
+                    </Pressable>
+                  </>
                 ) : (
                   <ThemedText type="small" style={styles.errorText}>
                     ❌ {answer.error ?? t('batches.noAnswer')}
@@ -556,6 +625,25 @@ const styles = StyleSheet.create({
   history: {
     gap: Spacing.three,
   },
+  dialogCard: {
+    borderWidth: 1,
+    borderRadius: Spacing.three,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    gap: Spacing.one,
+  },
+  dialogRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.two,
+  },
+  dialogTitle: {
+    flex: 1,
+  },
+  backButton: {
+    paddingVertical: Spacing.one,
+  },
   emptyHint: {
     textAlign: 'center',
     paddingVertical: Spacing.four,
@@ -606,6 +694,10 @@ const styles = StyleSheet.create({
   },
   copyIcon: {
     paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
+  },
+  copyAnswerButton: {
+    alignSelf: 'flex-end',
     paddingVertical: 2,
   },
   cardActions: {
