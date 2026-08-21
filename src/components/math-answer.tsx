@@ -12,7 +12,7 @@ type Segment = { kind: 'text' | 'math'; value: string };
 //   $$ ... $$   (display math)
 //   \[ ... \]   (display math)
 //   \( ... \)   (inline math)
-const MATH_PATTERN = /(\$\$[\s\S]{1,4000}?\$\$|\\\[[\s\S]{1,4000}?\\\]|\\\([^\\]{1,400}?\\\))/g;
+const MATH_PATTERN = /(\$\$[\s\S]{1,4000}?\$\$|\\\[[\s\S]{1,4000}?\\\]|\\\([\s\S]{1,400}?\\\))/g;
 
 export function splitMathSegments(text: string): Segment[] {
   const segments: Segment[] = [];

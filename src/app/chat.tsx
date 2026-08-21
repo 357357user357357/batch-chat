@@ -63,6 +63,8 @@ export default function ChatScreen() {
   const [hydrated, setHydrated] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Restore the conversation from a previous app run.
   useEffect(() => {
@@ -85,6 +87,13 @@ export default function ChatScreen() {
     if (!hydrated) return;
     void saveJSON(STORAGE_KEY, { messages, model });
   }, [messages, model, hydrated]);
+
+  // Clear the copy feedback timer when the screen unmounts.
+  useEffect(() => {
+    return () => {
+      if (copyTimer.current) clearTimeout(copyTimer.current);
+    };
+  }, []);
 
   const handleSend = async () => {
     const text = input.trim();
@@ -133,8 +142,11 @@ export default function ChatScreen() {
     ]);
   };
 
-  const handleCopy = async (content: string) => {
+  const handleCopy = async (content: string, id: string) => {
     await Clipboard.setStringAsync(content);
+    setCopiedId(id);
+    if (copyTimer.current) clearTimeout(copyTimer.current);
+    copyTimer.current = setTimeout(() => setCopiedId(null), 1600);
   };
 
   const contentPlatformStyle = Platform.select({
@@ -194,11 +206,11 @@ export default function ChatScreen() {
                   <>
                     <MathAnswer text={message.content} />
                     <Pressable
-                      onPress={() => void handleCopy(message.content)}
+                      onPress={() => void handleCopy(message.content, message.id)}
                       hitSlop={8}
                       style={styles.copyButton}>
-                      <ThemedText type="code" themeColor="textSecondary">
-                        ⧉ {t('chat.copy')}
+                      <ThemedText type="code" themeColor={copiedId === message.id ? 'text' : 'textSecondary'}>
+                        {copiedId === message.id ? `✓ ${t('chat.copied')}` : `⧉ ${t('chat.copy')}`}
                       </ThemedText>
                     </Pressable>
                   </>
