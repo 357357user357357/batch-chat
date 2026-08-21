@@ -128,6 +128,8 @@ const en = {
   'chat.errorMessage': 'Error: {message}',
   'chat.copy': 'Copy',
   'chat.copyFormula': 'Copy formula',
+  'math.source': 'source',
+  'math.rendered': 'rendered',
   'chat.copied': 'Copied to clipboard.',
   'chat.newDialog': 'New dialog',
   'chat.back': 'Back',

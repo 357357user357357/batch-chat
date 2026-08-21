@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 
@@ -47,6 +47,7 @@ function stripDelimiters(raw: string): string {
 export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: number }) {
   const segments = useMemo(() => splitMathSegments(text), [text]);
   const { t } = useI18n();
+  const [showSource, setShowSource] = useState(false);
 
   const copyFormula = async (source: string) => {
     try {
@@ -57,7 +58,24 @@ export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: n
   };
 
   if (!segments.length) {
-    return <ThemedText type="small">{text}</ThemedText>;
+    return <ThemedText type="small" selectable>{text}</ThemedText>;
+  }
+
+  // Raw Markdown view: the whole answer (text + `$$…$$` LaTeX) as selectable
+  // text, so any chunk can be long-pressed and copied *with its formulas*.
+  if (showSource) {
+    return (
+      <View style={styles.container}>
+        <ThemedText type="code" selectable style={styles.sourceText}>
+          {text}
+        </ThemedText>
+        <Pressable onPress={() => setShowSource(false)} hitSlop={6} style={styles.toggle}>
+          <ThemedText type="code" themeColor="textSecondary">
+            {t('math.rendered')}
+          </ThemedText>
+        </Pressable>
+      </View>
+    );
   }
 
   return (
@@ -84,6 +102,12 @@ export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: n
           </ThemedText>
         )
       )}
+
+      <Pressable onPress={() => setShowSource(true)} hitSlop={6} style={styles.toggle}>
+        <ThemedText type="code" themeColor="textSecondary">
+          {t('math.source')}
+        </ThemedText>
+      </Pressable>
     </View>
   );
 }
@@ -102,5 +126,12 @@ const styles = StyleSheet.create({
   copyHint: {
     alignSelf: 'flex-end',
     marginTop: -6,
+  },
+  sourceText: {
+    lineHeight: 20,
+  },
+  toggle: {
+    alignSelf: 'flex-end',
+    marginTop: 2,
   },
 });
