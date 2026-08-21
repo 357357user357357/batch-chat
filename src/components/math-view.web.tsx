@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { StyleSheet, View, type ViewStyle } from 'react-native';
 
 import { useTheme } from '@/hooks/use-theme';
+import { loadMathJax } from '@/services/mathjax.web';
 
 export type MathViewProps = {
   /** LaTeX (TeX) expression, e.g. `x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}` */
@@ -12,52 +13,6 @@ export type MathViewProps = {
   /** Called once MathJax finished rendering. */
   onReady?: () => void;
 };
-
-type MathJaxApi = {
-  startup?: { promise: Promise<unknown> };
-  tex2svgPromise?: (tex: string, options?: { display?: boolean }) => Promise<HTMLElement>;
-};
-
-declare global {
-  interface Window {
-    MathJax?: MathJaxApi & Record<string, unknown>;
-  }
-}
-
-let mathJaxLoadPromise: Promise<MathJaxApi> | null = null;
-
-function loadMathJax(): Promise<MathJaxApi> {
-  if (typeof window === 'undefined') {
-    return Promise.reject(new Error('MathJax requires a browser.'));
-  }
-  const existing = window.MathJax;
-  if (existing?.tex2svgPromise) return Promise.resolve(existing);
-  if (mathJaxLoadPromise) return mathJaxLoadPromise;
-
-  mathJaxLoadPromise = new Promise<MathJaxApi>((resolve, reject) => {
-    const script = document.createElement('script');
-    script.src = 'https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js';
-    script.async = true;
-    script.onload = () => {
-      const api = window.MathJax;
-      if (api?.tex2svgPromise) {
-        resolve(api);
-      } else if (api?.startup?.promise) {
-        api.startup.promise.then(() => resolve(api)).catch(reject);
-      } else {
-        mathJaxLoadPromise = null;
-        reject(new Error('MathJax failed to initialize.'));
-      }
-    };
-    script.onerror = () => {
-      mathJaxLoadPromise = null;
-      reject(new Error('Could not load MathJax from the CDN.'));
-    };
-    document.head.appendChild(script);
-  });
-
-  return mathJaxLoadPromise;
-}
 
 /**
  * Web implementation of MathView: renders LaTeX with MathJax v3 (SVG) directly

@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
 
 import { ThemedText } from '@/components/themed-text';
-import { MathView } from '@/components/math-view';
+import { MathArticle } from '@/components/math-article';
 import { useI18n } from '@/i18n';
 
 type Segment = { kind: 'text' | 'math'; value: string };
@@ -34,14 +33,6 @@ export function splitMathSegments(text: string): Segment[] {
   return segments;
 }
 
-function stripDelimiters(raw: string): string {
-  if (raw.startsWith('$$')) return raw.slice(2, -2);
-  if (raw.startsWith('\\[')) return raw.slice(2, -2);
-  if (raw.startsWith('\\(')) return raw.slice(2, -2);
-  if (raw.startsWith('$')) return raw.slice(1, -1);
-  return raw;
-}
-
 /**
  * Renders AI text that may contain LaTeX: plain paragraphs + MathJax formulas.
  * Each formula is tappable to copy its LaTeX source (like OpenRouter's
@@ -49,21 +40,9 @@ function stripDelimiters(raw: string): string {
  * "Copy formula" affordance is shown per block.
  */
 export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: number }) {
-  const segments = useMemo(() => splitMathSegments(text), [text]);
   const { t } = useI18n();
   const [showSource, setShowSource] = useState(false);
-
-  const copyFormula = async (source: string) => {
-    try {
-      await Clipboard.setStringAsync(source);
-    } catch (err) {
-      console.warn('[math-answer] copy failed', err);
-    }
-  };
-
-  if (!segments.length) {
-    return <ThemedText type="small" selectable>{text}</ThemedText>;
-  }
+  const hasMath = useMemo(() => splitMathSegments(text).some((s) => s.kind === 'math'), [text]);
 
   // Raw Markdown view: the whole answer (text + `$$…$$` LaTeX) as selectable
   // text, so any chunk can be long-pressed and copied *with its formulas*.
@@ -82,31 +61,14 @@ export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: n
     );
   }
 
+  // No math → plain selectable text (no webview needed).
+  if (!hasMath) {
+    return <ThemedText type="small" selectable>{text}</ThemedText>;
+  }
+
   return (
     <View style={styles.container}>
-      {segments.map((segment, index) =>
-        segment.kind === 'math' ? (
-          <View key={index} style={styles.mathBlock}>
-            <Pressable
-              onPress={() => void copyFormula(stripDelimiters(segment.value))}
-              accessibilityLabel={t('chat.copyFormula')}
-              hitSlop={6}>
-              <MathView
-                tex={stripDelimiters(segment.value)}
-                fontSize={Math.max(12, Math.round(fontSize * 0.95))}
-              />
-              <ThemedText type="code" themeColor="textSecondary" style={styles.copyHint}>
-                ⧉ {t('chat.copyFormula')}
-              </ThemedText>
-            </Pressable>
-          </View>
-        ) : (
-          <ThemedText key={index} type="small" style={styles.text}>
-            {segment.value}
-          </ThemedText>
-        )
-      )}
-
+      <MathArticle text={text} fontSize={fontSize} />
       <Pressable onPress={() => setShowSource(true)} hitSlop={6} style={styles.toggle}>
         <ThemedText type="code" themeColor="textSecondary">
           {t('math.source')}
