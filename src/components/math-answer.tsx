@@ -12,7 +12,10 @@ type Segment = { kind: 'text' | 'math'; value: string };
 //   $$ ... $$   (display math)
 //   \[ ... \]   (display math)
 //   \( ... \)   (inline math)
-const MATH_PATTERN = /(\$\$[\s\S]{1,4000}?\$\$|\\\[[\s\S]{1,4000}?\\\]|\\\([\s\S]{1,400}?\\\))/g;
+//   $ ... $     (inline math)
+// The single-dollar rule requires a non-space, non-$ char right inside each
+// dollar (and no newline between) so amounts like "$5" aren't mistaken for math.
+const MATH_PATTERN = /(\$\$[\s\S]{1,4000}?\$\$|\\\[[\s\S]{1,4000}?\\\]|\\\([\s\S]{1,400}?\\\)|\$[^\s$](?:[^$\n]*[^\s$])?\$)/g;
 
 export function splitMathSegments(text: string): Segment[] {
   const segments: Segment[] = [];
@@ -35,6 +38,7 @@ function stripDelimiters(raw: string): string {
   if (raw.startsWith('$$')) return raw.slice(2, -2);
   if (raw.startsWith('\\[')) return raw.slice(2, -2);
   if (raw.startsWith('\\(')) return raw.slice(2, -2);
+  if (raw.startsWith('$')) return raw.slice(1, -1);
   return raw;
 }
 
