@@ -1,5 +1,5 @@
 import * as Device from 'expo-device';
-import { Platform, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AnimatedIcon } from '@/components/animated-icon';
@@ -8,24 +8,19 @@ import { HintRow } from '@/components/hint-row';
 import { MathView } from '@/components/math-view';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { WebBadge } from '@/components/web-badge';
 import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
 import { useI18n } from '@/i18n';
 import MyRustModule from '../../modules/my-rust-module/src/MyRustModule';
 
 export default function HomeScreen() {
   const { t } = useI18n();
-  const rustMessage =
-    Platform.OS === 'web' ? t('home.rustUnavailable') : MyRustModule.hello();
+  const rustMessage = MyRustModule.hello();
 
   let devHint: string;
-  if (Platform.OS === 'web') {
-    devHint = t('home.webDevtools');
-  } else if (Device.isDevice) {
+  if (Device.isDevice) {
     devHint = t('home.shakeDevice');
   } else {
-    const shortcut = Platform.OS === 'android' ? 'cmd+m (or ctrl+m)' : 'cmd+d';
-    devHint = t('home.pressShortcut', { shortcut });
+    devHint = t('home.pressShortcut', { shortcut: 'cmd+m (or ctrl+m)' });
   }
 
   return (
@@ -66,7 +61,6 @@ export default function HomeScreen() {
           />
         </ThemedView>
 
-        {Platform.OS === 'web' && <WebBadge />}
       </SafeAreaView>
     </ThemedView>
   );

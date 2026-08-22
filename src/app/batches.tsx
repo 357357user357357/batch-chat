@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -247,8 +246,6 @@ export default function BatchesScreen() {
       Alert.alert(t('common.saved'), t('batches.saved'));
     } else if (outcome === 'shared') {
       Alert.alert(t('common.saved'), t('batches.shared'));
-    } else if (outcome === 'web') {
-      Alert.alert(t('common.saved'), t('batches.saved'));
     } else if (outcome === 'canceled') {
       // user dismissed the system picker, not an error
     } else {
@@ -287,18 +284,12 @@ export default function BatchesScreen() {
     (item) => item.batch && !isBatchTerminal(item.batch) && !item.error
   );
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-      paddingBottom: insets.bottom,
-    },
-    web: {
-      paddingTop: Spacing.six,
-      paddingBottom: Spacing.four,
-    },
-  });
+  const contentPlatformStyle = {
+    paddingTop: insets.top,
+    paddingLeft: insets.left,
+    paddingRight: insets.right,
+    paddingBottom: insets.bottom,
+  };
 
   if (selectedItem) {
     return (

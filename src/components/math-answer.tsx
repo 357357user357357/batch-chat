@@ -1,48 +1,38 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { MathArticle } from '@/components/math-article';
+import { MathArticle, type MathArticleHandle } from '@/components/math-article';
+import { containsMath } from '@/components/math-segments';
+import { Spacing } from '@/constants/theme';
 import { useI18n } from '@/i18n';
-
-type Segment = { kind: 'text' | 'math'; value: string };
-
-// Splits text into plain-text parts and LaTeX blocks:
-//   $$ ... $$   (display math)
-//   \[ ... \]   (display math)
-//   \( ... \)   (inline math)
-//   $ ... $     (inline math)
-// The single-dollar rule requires a non-space, non-$ char right inside each
-// dollar (and no newline between) so amounts like "$5" aren't mistaken for math.
-const MATH_PATTERN = /(\$\$[\s\S]{1,4000}?\$\$|\\\[[\s\S]{1,4000}?\\\]|\\\([\s\S]{1,400}?\\\)|\$[^\s$](?:[^$\n]*[^\s$])?\$)/g;
-
-export function splitMathSegments(text: string): Segment[] {
-  const segments: Segment[] = [];
-  let lastIndex = 0;
-  for (const match of text.matchAll(MATH_PATTERN)) {
-    const index = match.index as number;
-    if (index > lastIndex) {
-      segments.push({ kind: 'text', value: text.slice(lastIndex, index) });
-    }
-    segments.push({ kind: 'math', value: match[0] });
-    lastIndex = index + match[0].length;
-  }
-  if (lastIndex < text.length) {
-    segments.push({ kind: 'text', value: text.slice(lastIndex) });
-  }
-  return segments;
-}
 
 /**
  * Renders AI text that may contain LaTeX: plain paragraphs + MathJax formulas.
- * Each formula is tappable to copy its LaTeX source (like OpenRouter's
- * "copy" affordance); a long-press is not needed on mobile, so a visible
- * "Copy formula" affordance is shown per block.
+ * The rendered text is selectable — select any portion, tap "Copy selection"
+ * to copy just that part (formulas are copied as their LaTeX source), or open
+ * the raw source view to copy the whole answer.
  */
 export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: number }) {
   const { t } = useI18n();
   const [showSource, setShowSource] = useState(false);
-  const hasMath = useMemo(() => splitMathSegments(text).some((s) => s.kind === 'math'), [text]);
+  const [copied, setCopied] = useState(false);
+  const [hasSelection, setHasSelection] = useState(false);
+  const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const articleRef = useRef<MathArticleHandle>(null);
+  const hasMath = useMemo(() => containsMath(text), [text]);
+
+  useEffect(() => () => {
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+  }, []);
+
+  // Selection inside the rendered math view copies only the selected portion
+  // (LaTeX formulas included) straight to the clipboard — no source view.
+  const handleMathCopy = (_copiedText: string) => {
+    setCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), 5000);
+  };
 
   // Raw Markdown view: the whole answer (text + `$$…$$` LaTeX) as selectable
   // text, so any chunk can be long-pressed and copied *with its formulas*.
@@ -68,12 +58,37 @@ export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: n
 
   return (
     <View style={styles.container}>
-      <MathArticle text={text} fontSize={fontSize} />
-      <Pressable onPress={() => setShowSource(true)} hitSlop={6} style={styles.toggle}>
-        <ThemedText type="code" themeColor="textSecondary">
-          {t('math.source')}
+      <MathArticle
+        ref={articleRef}
+        text={text}
+        fontSize={fontSize}
+        onCopy={handleMathCopy}
+        onSelectionChange={setHasSelection}
+      />
+      {hasSelection ? (
+        <Pressable
+          onPressIn={() => articleRef.current?.requestCopy()}
+          hitSlop={6}
+          style={styles.copySelection}
+          accessibilityRole="button">
+          <ThemedText type="smallBold" style={styles.copySelectionText}>
+            ⧉ {t('chat.copySelection')}
+          </ThemedText>
+        </Pressable>
+      ) : null}
+      <View style={styles.footerRow}>
+        <ThemedText
+          type="small"
+          themeColor={copied ? 'text' : 'textSecondary'}
+          style={styles.copyHint}>
+          {copied ? `✓ ${t('chat.copied')}` : t('math.copyHint')}
         </ThemedText>
-      </Pressable>
+        <Pressable onPress={() => setShowSource(true)} hitSlop={6} style={styles.toggle}>
+          <ThemedText type="code" themeColor="textSecondary">
+            {t('math.source')}
+          </ThemedText>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -82,22 +97,31 @@ const styles = StyleSheet.create({
   container: {
     gap: 4,
   },
-  text: {
-    lineHeight: 21,
-  },
-  mathBlock: {
-    marginVertical: 4,
-    alignSelf: 'stretch',
-  },
-  copyHint: {
-    alignSelf: 'flex-end',
-    marginTop: -6,
-  },
   sourceText: {
     lineHeight: 20,
   },
-  toggle: {
+  footerRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 4,
+  },
+  copyHint: {
+    flex: 1,
+    alignSelf: 'center',
+  },
+  copySelection: {
     alignSelf: 'flex-end',
+    backgroundColor: '#3c87f7',
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.half,
+  },
+  copySelectionText: {
+    color: '#ffffff',
+  },
+  toggle: {
+    alignSelf: 'center',
     marginTop: 2,
   },
 });

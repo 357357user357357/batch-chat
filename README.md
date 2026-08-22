@@ -1,6 +1,6 @@
 # Fable5 🧮
 
-Android (and web) app for asking batches of questions through the
+Android app for asking batches of questions through the
 [OpenRouter Batch API](https://openrouter.ai/docs/batch-quickstart) — one line =
 one request, ~50% off the model's price — plus a live **Chat** tab.
 
@@ -18,9 +18,11 @@ rebuilt automatically on every push to `main` (see
 ## Features
 
 - **Live chat**: instant answers from any OpenRouter model you pick. LaTeX
-  answers render with MathJax, and both the full answer and each individual
-  formula can be copied (the formula is copied as its LaTeX source, just like
-  OpenRouter's own copy affordance).
+  answers render with MathJax, and **long-pressing** anywhere on a rendered
+  answer copies the whole message to the clipboard **including its LaTeX
+  formulas** — no need to switch to the raw `source` view (each formula is
+  also copied as its LaTeX source, just like OpenRouter's own copy
+  affordance).
 - **Browse models**: an in-app catalog of *every* OpenRouter model — live and
   `:batch` together — searchable by name/id and sortable by newest, price
   (low→high or high→low) or context length, so you can hunt for interesting
@@ -43,7 +45,6 @@ npx expo start
 ```
 
 - Android device build: `npx expo run:android`
-- Web: press `w` in the Expo terminal
 
 ## Under the hood
 

@@ -36,8 +36,6 @@ const en = {
   'home.tryEditing': 'Try editing',
   'home.devTools': 'Dev tools',
   'home.freshStart': 'Fresh start',
-  'home.rustUnavailable': 'MyRustModule is not available on web',
-  'home.webDevtools': 'use browser devtools',
   'home.shakeDevice': 'shake device or press m in terminal',
   'home.pressShortcut': 'press {shortcut}',
   'home.deployHint': 'src/app/index.tsx',
@@ -128,8 +126,10 @@ const en = {
   'chat.errorMessage': 'Error: {message}',
   'chat.copy': 'Copy',
   'chat.copyFormula': 'Copy formula',
+  'chat.copySelection': 'Copy selected',
   'math.source': 'source',
   'math.rendered': 'rendered',
+  'math.copyHint': 'Select text to copy with formulas',
   'chat.copied': 'Copied to clipboard.',
   'chat.newDialog': 'New dialog',
   'chat.back': 'Back',
@@ -139,6 +139,8 @@ const en = {
   'chat.you': 'You',
   'chat.delete': 'Delete dialog',
   'chat.deleteConfirm': 'Delete this conversation?',
+  'chat.dialogs': 'Chats',
+  'chat.activeTag': 'current',
 
   'models.searchPlaceholder': 'Search by name or id…',
   'models.filter.all': 'All',
@@ -154,6 +156,9 @@ const en = {
   'models.sort.context': 'Context length',
   'models.showMore': 'Show all {count} models',
   'models.showLess': 'Show fewer',
+  'models.noMatch': 'No matching models.',
+  'models.useCustom': 'Use “{id}” as a custom model id',
+  'models.selected': 'Selected: {model}',
 };
 
 export type TKey = keyof typeof en;

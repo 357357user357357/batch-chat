@@ -13,6 +13,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 
+import { ChatDrawer } from '@/components/chat-drawer';
 import { MathAnswer } from '@/components/math-answer';
 import { ModelChips } from '@/components/model-chips';
 import { ModelBrowser } from '@/components/model-browser';
@@ -87,6 +88,7 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -166,6 +168,32 @@ export default function ChatScreen() {
   const goBack = () => {
     setActiveId(null);
     setBrowseOpen(false);
+  };
+
+  const handleDrawerClose = () => setDrawerOpen(false);
+
+  const handleDrawerSelect = (id: string) => {
+    openDialog(id);
+    setDrawerOpen(false);
+  };
+
+  const handleDrawerNew = () => {
+    handleNew();
+    setDrawerOpen(false);
+  };
+
+  const handleDrawerDelete = (id: string) => {
+    Alert.alert(t('chat.delete'), t('chat.deleteConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: () => {
+          setDialogs((current) => current.filter((dialog) => dialog.id !== id));
+          if (id === activeId) setActiveId(null);
+        },
+      },
+    ]);
   };
 
   const setActiveModel = (id: string) => {
@@ -270,16 +298,11 @@ export default function ChatScreen() {
     copyTimer.current = setTimeout(() => setCopiedId(null), 1600);
   };
 
-  const contentPlatformStyle = Platform.select({
-    android: {
-      paddingTop: insets.top,
-      paddingLeft: insets.left,
-      paddingRight: insets.right,
-    },
-    web: {
-      paddingTop: Spacing.six,
-    },
-  });
+  const contentPlatformStyle = {
+    paddingTop: insets.top,
+    paddingLeft: insets.left,
+    paddingRight: insets.right,
+  };
 
   const sortedDialogs = [...dialogs].sort((a, b) => b.updatedAt - a.updatedAt);
 
@@ -292,6 +315,14 @@ export default function ChatScreen() {
           <>
             <View style={[styles.header, contentPlatformStyle]}>
               <View style={styles.headerLeft}>
+                <Pressable
+                  onPress={() => setDrawerOpen(true)}
+                  hitSlop={8}
+                  style={styles.menuButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.dialogs')}>
+                  <ThemedText style={styles.menuIcon}>☰</ThemedText>
+                </Pressable>
                 <Pressable onPress={goBack} hitSlop={8} style={styles.backButton}>
                   <ThemedText type="smallBold" themeColor="textSecondary">
                     ‹ {t('chat.back')}
@@ -331,7 +362,7 @@ export default function ChatScreen() {
                 message.role === 'user' ? (
                   <View key={message.id} style={styles.userRow}>
                     <ThemedView type="backgroundSelected" style={styles.userBubble}>
-                      <ThemedText type="small" style={styles.userText}>
+                      <ThemedText type="small" style={styles.userText} selectable>
                         {message.content}
                       </ThemedText>
                     </ThemedView>
@@ -424,6 +455,14 @@ export default function ChatScreen() {
           <>
             <View style={[styles.header, contentPlatformStyle]}>
               <View style={styles.headerLeft}>
+                <Pressable
+                  onPress={() => setDrawerOpen(true)}
+                  hitSlop={8}
+                  style={styles.menuButton}
+                  accessibilityRole="button"
+                  accessibilityLabel={t('chat.dialogs')}>
+                  <ThemedText style={styles.menuIcon}>☰</ThemedText>
+                </Pressable>
                 <ThemedText type="subtitle">{t('chat.title')}</ThemedText>
               </View>
               <Pressable onPress={handleNew} hitSlop={8} style={styles.newButton}>
@@ -482,6 +521,16 @@ export default function ChatScreen() {
           </>
         )}
       </View>
+
+      <ChatDrawer
+        visible={drawerOpen}
+        dialogs={sortedDialogs}
+        activeId={activeId}
+        onClose={handleDrawerClose}
+        onSelect={handleDrawerSelect}
+        onNew={handleDrawerNew}
+        onDelete={handleDrawerDelete}
+      />
     </KeyboardAvoidingView>
   );
 }
@@ -631,5 +680,13 @@ const styles = StyleSheet.create({
   },
   sendText: {
     color: '#ffffff',
+  },
+  menuButton: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.half,
+  },
+  menuIcon: {
+    fontSize: 22,
+    lineHeight: 26,
   },
 });

@@ -6,7 +6,6 @@
  *   Framework dialog; if the user rejects it, falls back to the share sheet.
  * - iOS: writes to the app cache and opens the system share sheet (Files,
  *   Mail, Messages, …).
- * - Web: triggers a normal browser download.
  */
 import { Platform } from 'react-native';
 import { File, Paths } from 'expo-file-system';
@@ -17,18 +16,13 @@ import { StorageAccessFramework } from 'expo-file-system/legacy';
 const DOWNLOADS_URI = 'content://com.android.externalstorage.documents/document/primary%3ADownload';
 
 /** Fuzzy summary of what happened, used by the caller for the toast message. */
-export type SaveOutcome = 'saved' | 'shared' | 'canceled' | 'unsupported' | 'web';
+export type SaveOutcome = 'saved' | 'shared' | 'canceled' | 'unsupported';
 
 export async function saveTextFile(
   filename: string,
   contents: string,
   mimeType: string
 ): Promise<SaveOutcome> {
-  if (Platform.OS === 'web') {
-    downloadInBrowser(filename, contents, mimeType);
-    return 'web';
-  }
-
   // Android: direct "Save as…" into (default) Downloads via the Storage
   // Access Framework. The user picks the folder once per save.
   if (Platform.OS === 'android') {
@@ -65,30 +59,4 @@ export async function saveTextFile(
     console.warn('[files] cache+share failed', error);
   }
   return 'unsupported';
-}
-
-function downloadInBrowser(filename: string, contents: string, mimeType: string) {
-  const dom = (globalThis as Record<string, unknown>).document as
-    | {
-        createElement(tag: string): {
-          href?: string;
-          download?: string;
-          click(): void;
-          remove(): void;
-        };
-        body: { appendChild(node: unknown): void };
-      }
-    | undefined;
-  if (!dom) return;
-  const blob = new Blob([contents], { type: mimeType });
-  const url = URL.createObjectURL(blob);
-  const anchor = dom.createElement('a');
-  anchor.href = url;
-  anchor.download = filename;
-  dom.body.appendChild(anchor);
-  anchor.click();
-  setTimeout(() => {
-    URL.revokeObjectURL(url);
-    anchor.remove();
-  }, 0);
 }
