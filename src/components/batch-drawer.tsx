@@ -5,6 +5,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -19,6 +20,8 @@ export type BatchDialogSummary = {
   model: string;
   prompts: string[];
   createdAt: number;
+  /** Flattened questions + answers, used for search. */
+  searchText?: string;
 };
 
 export type BatchDrawerProps = {
@@ -36,6 +39,12 @@ function formatTime(timestamp: number): string {
   const day = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
   const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return `${day} ${time}`;
+}
+
+/** Short, single-line label for a batch: its first (main) question. */
+function labelFromPrompts(prompts: string[]): string {
+  const first = (prompts.find((p) => p.trim()) ?? '').replace(/\s+/g, ' ').trim();
+  return first.length > 42 ? `${first.slice(0, 42)}…` : first;
 }
 
 /**
@@ -58,6 +67,7 @@ export function BatchDrawer({
   const width = Math.floor(windowWidth * (2 / 3));
 
   const [mounted, setMounted] = useState(visible);
+  const [search, setSearch] = useState('');
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -80,6 +90,11 @@ export function BatchDrawer({
     }
   }, [visible, mounted, progress]);
 
+  // Clear the search whenever the drawer is closed.
+  useEffect(() => {
+    if (!visible) setSearch('');
+  }, [visible]);
+
   if (!mounted) return null;
 
   const translateX = progress.interpolate({
@@ -88,6 +103,13 @@ export function BatchDrawer({
   });
 
   const sorted = [...dialogs].sort((a, b) => b.createdAt - a.createdAt);
+
+  const query = search.trim().toLowerCase();
+  const filtered = query
+    ? sorted.filter((dialog) =>
+        (dialog.searchText ?? dialog.prompts.join(' ')).toLowerCase().includes(query)
+      )
+    : sorted;
 
   return (
     <Modal
@@ -133,16 +155,33 @@ export function BatchDrawer({
               </Pressable>
             </View>
           </View>
+          <View style={styles.searchWrap}>
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder={t('batches.searchPlaceholder')}
+              placeholderTextColor={theme.textSecondary}
+              autoCorrect={false}
+              style={[
+                styles.searchInput,
+                {
+                  color: theme.text,
+                  backgroundColor: theme.background,
+                  borderColor: theme.backgroundSelected,
+                },
+              ]}
+            />
+          </View>
           <ScrollView
             style={styles.flex}
             contentContainerStyle={styles.listContent}
             keyboardShouldPersistTaps="handled">
-            {sorted.length === 0 ? (
+            {filtered.length === 0 ? (
               <ThemedText themeColor="textSecondary" type="small" style={styles.emptyHint}>
-                {t('batches.historyEmpty')}
+                {query ? t('common.noMatch') : t('batches.historyEmpty')}
               </ThemedText>
             ) : (
-              sorted.map((dialog) => {
+              filtered.map((dialog) => {
                 const active = dialog.id === activeId;
                 return (
                   <View
@@ -162,7 +201,7 @@ export function BatchDrawer({
                       accessibilityRole="button">
                       <View style={styles.rowTitleRow}>
                         <ThemedText type="smallBold" numberOfLines={1} style={styles.rowTitle}>
-                          {dialog.model}
+                          {labelFromPrompts(dialog.prompts) || t('batches.untitled')}
                         </ThemedText>
                         {active ? (
                           <ThemedText
@@ -172,12 +211,8 @@ export function BatchDrawer({
                           </ThemedText>
                         ) : null}
                       </View>
-                      <ThemedText
-                        type="small"
-                        themeColor="textSecondary"
-                        numberOfLines={2}
-                        style={styles.preview}>
-                        {dialog.prompts[0] ?? ''}
+                      <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
+                        {dialog.model}
                       </ThemedText>
                       <ThemedText type="code" themeColor="textSecondary">
                         {formatTime(dialog.createdAt)} ·{' '}
@@ -263,6 +298,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     gap: Spacing.two,
+  },
+  searchWrap: {
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 15,
+    minHeight: 44,
   },
   emptyHint: {
     textAlign: 'center',

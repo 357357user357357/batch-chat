@@ -21,6 +21,7 @@ const en = {
   'common.canceled': 'Canceled',
   'common.failed': 'Error',
   'common.delete': 'Delete',
+  'common.noMatch': 'No matches.',
 
   'models.title': 'Models (OpenRouter)',
   'models.refresh': 'refresh',
@@ -82,6 +83,8 @@ const en = {
 
   'batches.title': 'Batches',
   'batches.newBatch': 'New batch',
+  'batches.untitled': 'Untitled batch',
+  'batches.searchPlaceholder': 'Search batches…',
   'batches.activeTag': 'current',
   'batches.deleteConfirm': 'Delete this batch and its answers?',
   'batches.subtitle':
@@ -135,6 +138,7 @@ const en = {
   'math.copyHint': 'Select text to copy with formulas',
   'chat.copied': 'Copied to clipboard.',
   'chat.newDialog': 'New dialog',
+  'chat.searchPlaceholder': 'Search chats…',
   'chat.back': 'Back',
   'chat.untitled': 'Untitled dialog',
   'chat.noDialogs': 'No conversations yet. Tap "New dialog" to start.',

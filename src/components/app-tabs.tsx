@@ -12,7 +12,7 @@ export default function AppTabs() {
   return (
     <NativeTabs
       backgroundColor={colors.background}
-      indicatorColor={colors.backgroundElement}
+      disableIndicator
       labelStyle={{ selected: { color: colors.text } }}>
       <NativeTabs.Trigger name="index" labelVisibilityMode="unlabeled">
         <NativeTabs.Trigger.Label>{t('tab.home')}</NativeTabs.Trigger.Label>

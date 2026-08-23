@@ -5,6 +5,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
@@ -72,6 +73,7 @@ export function ChatDrawer({
 
   // Keep the `Modal` mounted while the close animation plays out.
   const [mounted, setMounted] = useState(visible);
+  const [search, setSearch] = useState('');
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -94,6 +96,11 @@ export function ChatDrawer({
     }
   }, [visible, mounted, progress]);
 
+  // Clear the search whenever the drawer is closed.
+  useEffect(() => {
+    if (!visible) setSearch('');
+  }, [visible]);
+
   if (!mounted) return null;
 
   const translateX = progress.interpolate({
@@ -102,6 +109,15 @@ export function ChatDrawer({
   });
 
   const sorted = [...dialogs].sort((a, b) => b.updatedAt - a.updatedAt);
+
+  const query = search.trim().toLowerCase();
+  const filtered = query
+    ? sorted.filter((dialog) =>
+        `${dialog.title} ${dialog.messages.map((m) => m.content).join(' ')}`
+          .toLowerCase()
+          .includes(query)
+      )
+    : sorted;
 
   return (
     <Modal
@@ -152,16 +168,33 @@ export function ChatDrawer({
               </Pressable>
             </View>
           </View>
+          <View style={styles.searchWrap}>
+            <TextInput
+              value={search}
+              onChangeText={setSearch}
+              placeholder={t('chat.searchPlaceholder')}
+              placeholderTextColor={theme.textSecondary}
+              autoCorrect={false}
+              style={[
+                styles.searchInput,
+                {
+                  color: theme.text,
+                  backgroundColor: theme.background,
+                  borderColor: theme.backgroundSelected,
+                },
+              ]}
+            />
+          </View>
           <ScrollView
             style={styles.flex}
             contentContainerStyle={styles.listContent}
             keyboardShouldPersistTaps="handled">
-            {sorted.length === 0 ? (
+            {filtered.length === 0 ? (
               <ThemedText themeColor="textSecondary" type="small" style={styles.emptyHint}>
-                {t('chat.noDialogs')}
+                {query ? t('common.noMatch') : t('chat.noDialogs')}
               </ThemedText>
             ) : (
-              sorted.map((dialog) => {
+              filtered.map((dialog) => {
                 const last = dialog.messages[dialog.messages.length - 1];
                 const preview = last
                   ? last.role === 'user'
@@ -296,6 +329,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     gap: Spacing.two,
+  },
+  searchWrap: {
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 15,
+    minHeight: 44,
   },
   emptyHint: {
     textAlign: 'center',

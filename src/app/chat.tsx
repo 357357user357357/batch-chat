@@ -89,6 +89,7 @@ export default function ChatScreen() {
   const [hydrated, setHydrated] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const scrollRef = useRef<ScrollView>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -305,6 +306,14 @@ export default function ChatScreen() {
   };
 
   const sortedDialogs = [...dialogs].sort((a, b) => b.updatedAt - a.updatedAt);
+  const searchQuery = search.trim().toLowerCase();
+  const filteredDialogs = searchQuery
+    ? sortedDialogs.filter((dialog) =>
+        `${dialog.title} ${dialog.messages.map((m) => m.content).join(' ')}`
+          .toLowerCase()
+          .includes(searchQuery)
+      )
+    : sortedDialogs;
 
   return (
     <KeyboardAvoidingView
@@ -472,16 +481,34 @@ export default function ChatScreen() {
               </Pressable>
             </View>
 
+            <View style={styles.searchWrap}>
+              <TextInput
+                value={search}
+                onChangeText={setSearch}
+                placeholder={t('chat.searchPlaceholder')}
+                placeholderTextColor={theme.textSecondary}
+                autoCorrect={false}
+                style={[
+                  styles.searchInput,
+                  {
+                    color: theme.text,
+                    backgroundColor: theme.background,
+                    borderColor: theme.backgroundSelected,
+                  },
+                ]}
+              />
+            </View>
+
             <ScrollView
               style={styles.flex}
               contentContainerStyle={styles.listContent}
               keyboardShouldPersistTaps="handled">
-              {sortedDialogs.length === 0 ? (
+              {filteredDialogs.length === 0 ? (
                 <ThemedText themeColor="textSecondary" type="small" style={styles.emptyHint}>
-                  {t('chat.noDialogs')}
+                  {searchQuery ? t('common.noMatch') : t('chat.noDialogs')}
                 </ThemedText>
               ) : (
-                sortedDialogs.map((dialog) => {
+                filteredDialogs.map((dialog) => {
                   const last = dialog.messages[dialog.messages.length - 1];
                   const preview = last
                     ? last.role === 'user'
@@ -585,6 +612,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     gap: Spacing.two,
+  },
+  searchWrap: {
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 15,
+    minHeight: 44,
   },
   dialogCard: {
     borderWidth: 1,

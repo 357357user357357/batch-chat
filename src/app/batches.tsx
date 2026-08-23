@@ -48,6 +48,21 @@ function formatTime(timestamp: number): string {
   return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+/** Short, single-line label for a batch: its first (main) question. */
+function batchLabel(prompts: string[]): string {
+  const first = (prompts.find((p) => p.trim()) ?? '').replace(/\s+/g, ' ').trim();
+  return first.length > 42 ? `${first.slice(0, 42)}…` : first;
+}
+
+/** Flattened questions + answers for search. */
+function batchSearchText(item: HistoryItem): string {
+  const answers =
+    item.batch && item.batch.status === 'completed'
+      ? extractBatchAnswers(item.batch).map((a) => (a.ok ? a.answer ?? '' : a.error ?? ''))
+      : [];
+  return [...item.prompts, ...answers].join('\n');
+}
+
 /** Rows: batch_id;model;custom_id;prompt;answer (semicolon-separated, quoted). */
 export function buildCsv(item: HistoryItem): string {
   const answers =
@@ -103,6 +118,7 @@ export default function BatchesScreen() {
   const [browseOpen, setBrowseOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [search, setSearch] = useState('');
   const pollRuns = useRef(new Set<string>());
   const selectedItem = history.find((item) => item.id === selectedId) ?? null;
 
@@ -330,6 +346,18 @@ export default function BatchesScreen() {
     paddingBottom: insets.bottom,
   };
 
+  const searchQuery = search.trim().toLowerCase();
+  const filteredHistory = searchQuery
+    ? history.filter((item) => batchSearchText(item).toLowerCase().includes(searchQuery))
+    : history;
+  const drawerDialogs = history.map((item) => ({
+    id: item.id,
+    model: item.model,
+    prompts: item.prompts,
+    createdAt: item.createdAt,
+    searchText: batchSearchText(item),
+  }));
+
   if (selectedItem) {
     return (
       <>
@@ -367,7 +395,7 @@ export default function BatchesScreen() {
         </ScrollView>
         <BatchDrawer
           visible={drawerOpen}
-          dialogs={history}
+          dialogs={drawerDialogs}
           activeId={selectedId}
           onClose={() => setDrawerOpen(false)}
           onSelect={handleDrawerSelect}
@@ -459,13 +487,29 @@ export default function BatchesScreen() {
           </Pressable>
         </ThemedView>
 
+        <TextInput
+          value={search}
+          onChangeText={setSearch}
+          placeholder={t('batches.searchPlaceholder')}
+          placeholderTextColor={theme.textSecondary}
+          autoCorrect={false}
+          style={[
+            styles.searchInput,
+            {
+              color: theme.text,
+              backgroundColor: theme.background,
+              borderColor: theme.backgroundSelected,
+            },
+          ]}
+        />
+
         <View style={styles.history}>
-          {history.length === 0 ? (
+          {filteredHistory.length === 0 ? (
             <ThemedText themeColor="textSecondary" type="small" style={styles.emptyHint}>
-              {t('batches.historyEmpty')}
+              {searchQuery ? t('common.noMatch') : t('batches.historyEmpty')}
             </ThemedText>
           ) : (
-            history.map((item) => {
+            filteredHistory.map((item) => {
               const status = item.error ? 'error' : item.batch?.status ?? 'pending';
               const completed = item.batch?.status === 'completed';
               return (
@@ -475,7 +519,7 @@ export default function BatchesScreen() {
                   style={[styles.dialogCard, { borderColor: theme.backgroundSelected }]}>
                   <View style={styles.dialogRow}>
                     <ThemedText type="smallBold" numberOfLines={1} style={styles.dialogTitle}>
-                      {item.model}
+                      {batchLabel(item.prompts) || t('batches.untitled')}
                     </ThemedText>
                     <ThemedView
                       style={[
@@ -487,8 +531,8 @@ export default function BatchesScreen() {
                       </ThemedText>
                     </ThemedView>
                   </View>
-                  <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>
-                    {item.prompts[0] ?? ''}
+                  <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
+                    {item.model}
                   </ThemedText>
                   <ThemedText type="code" themeColor="textSecondary">
                     {formatTime(item.createdAt)} · {t('batches.questionsCount', { count: item.prompts.length })}
@@ -502,7 +546,7 @@ export default function BatchesScreen() {
       </ScrollView>
       <BatchDrawer
         visible={drawerOpen}
-        dialogs={history}
+        dialogs={drawerDialogs}
         activeId={selectedId}
         onClose={() => setDrawerOpen(false)}
         onSelect={handleDrawerSelect}
@@ -679,6 +723,14 @@ const styles = StyleSheet.create({
     padding: Spacing.three,
     fontSize: 15,
     textAlignVertical: 'top',
+  },
+  searchInput: {
+    borderWidth: 1,
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    fontSize: 15,
+    minHeight: 44,
   },
   browseToggle: {
     alignSelf: 'flex-start',
