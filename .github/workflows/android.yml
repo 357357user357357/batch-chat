@@ -78,23 +78,23 @@ jobs:
         working-directory: android
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk fable5-app.apk
+        run: cp android/app/build/outputs/apk/release/app-release.apk batch-chat.apk
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fable5-app-release-apk
-          path: fable5-app.apk
+          name: batch-chat-release-apk
+          path: batch-chat.apk
 
-      # Publishes to https://github.com/357357user357357/my-fable5-app/releases
+      # Publishes to https://github.com/357357user357357/batch-chat/releases
       # (creates the release on first push, then keeps it up to date).
       - name: Create / update GitHub Release
         if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create v1.0.0 fable5-app.apk \
+          gh release create v1.0.0 batch-chat.apk \
             --target "${{ github.sha }}" \
-            --title "Fable5 ${{ github.sha }}" \
+            --title "Batch Chat ${{ github.sha }}" \
             --notes "Latest Android build (standalone APK, arm64-v8a). Install: download and open on the phone." \
-          || gh release upload v1.0.0 fable5-app.apk --clobber
+          || gh release upload v1.0.0 batch-chat.apk --clobber

@@ -31,7 +31,7 @@ const en = {
   'models.batch.customPlaceholder': '…or type your own batch model id',
   'models.live.customPlaceholder': '…or type your own model id',
 
-  'home.heroTitle': 'Welcome to Expo',
+  'home.heroTitle': 'Batch Chat',
   'home.getStarted': 'get started',
   'home.tryEditing': 'Try editing',
   'home.devTools': 'Dev tools',
@@ -81,6 +81,9 @@ const en = {
   'card.errorPrefix': 'Error: {message}',
 
   'batches.title': 'Batches',
+  'batches.newBatch': 'New batch',
+  'batches.activeTag': 'current',
+  'batches.deleteConfirm': 'Delete this batch and its answers?',
   'batches.subtitle':
     'One line = one request. Send them as a batch and come back: the answers (and the math) will be collected right here.',
   'batches.promptPlaceholder': 'Question 1\nQuestion 2\nQuestion 3…',

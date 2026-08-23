@@ -1,4 +1,4 @@
-# Fable5 🧮
+# Batch Chat 🧮
 
 Android app for asking batches of questions through the
 [OpenRouter Batch API](https://openrouter.ai/docs/batch-quickstart) — one line =
@@ -9,9 +9,9 @@ one request, ~50% off the model's price — plus a live **Chat** tab.
 The latest standalone Android build (JS embedded, arm64-v8a, installable without
 Metro or Expo Go) is attached to the GitHub release:
 
-- **https://github.com/357357user357357/my-fable5-app/releases**
+- **https://github.com/357357user357357/batch-chat/releases**
 
-Download `fable5-app.apk` and open it on the phone to install. The release is
+Download `batch-chat.apk` and open it on the phone to install. The release is
 rebuilt automatically on every push to `main` (see
 `.github/workflows/android.yml`).
 

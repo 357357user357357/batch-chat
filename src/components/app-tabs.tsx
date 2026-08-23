@@ -14,7 +14,7 @@ export default function AppTabs() {
       backgroundColor={colors.background}
       indicatorColor={colors.backgroundElement}
       labelStyle={{ selected: { color: colors.text } }}>
-      <NativeTabs.Trigger name="index">
+      <NativeTabs.Trigger name="index" labelVisibilityMode="unlabeled">
         <NativeTabs.Trigger.Label>{t('tab.home')}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/home.png')}
@@ -22,7 +22,7 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="chat">
+      <NativeTabs.Trigger name="chat" labelVisibilityMode="unlabeled">
         <NativeTabs.Trigger.Label>{t('tab.chat')}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/chat.png')}
@@ -30,18 +30,10 @@ export default function AppTabs() {
         />
       </NativeTabs.Trigger>
 
-      <NativeTabs.Trigger name="batches">
+      <NativeTabs.Trigger name="batches" labelVisibilityMode="unlabeled">
         <NativeTabs.Trigger.Label>{t('tab.batches')}</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon
           src={require('@/assets/images/tabIcons/batches.png')}
-          renderingMode="template"
-        />
-      </NativeTabs.Trigger>
-
-      <NativeTabs.Trigger name="explore">
-        <NativeTabs.Trigger.Label>{t('tab.explore')}</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon
-          src={require('@/assets/images/tabIcons/explore.png')}
           renderingMode="template"
         />
       </NativeTabs.Trigger>

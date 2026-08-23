@@ -24,7 +24,6 @@ import {
   createBatch,
   extractBatchAnswers,
   getEnvApiKey,
-  OPENROUTER_BATCH_MODEL,
   waitForBatch,
   type BatchOutcome,
   type OpenRouterBatch,
@@ -130,10 +129,6 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
   };
 
   const hasAnyKey = Boolean(envKey || storedKey);
-  const masked =
-    storedKey && storedKey.length > 8
-      ? `${storedKey.slice(0, 6)}…${storedKey.slice(-4)}`
-      : storedKey;
 
   return (
     <ThemedView type="backgroundElement" style={[styles.card, style]}>
@@ -141,22 +136,6 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
         <ThemedText type="smallBold">{t('card.title')}</ThemedText>
         {busy === 'running' && <ActivityIndicator size="small" />}
       </View>
-
-      <ThemedText themeColor="textSecondary" type="small">
-        {t('card.batchModelNote', { model: OPENROUTER_BATCH_MODEL })}
-      </ThemedText>
-
-      {envKey ? (
-        <ThemedText themeColor="textSecondary" type="small">
-          {t('card.envKeyNote', { name: 'EXPO_PUBLIC_*' })}
-        </ThemedText>
-      ) : null}
-
-      {storedKey ? (
-        <ThemedText themeColor="textSecondary" type="small">
-          {t('card.deviceKeyNote', { masked: masked ?? '' })}
-        </ThemedText>
-      ) : null}
 
       <View style={styles.inputRow}>
         <TextInput

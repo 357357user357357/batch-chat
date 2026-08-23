@@ -11,6 +11,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Clipboard from 'expo-clipboard';
 
+import { BatchDrawer } from '@/components/batch-drawer';
 import { MathAnswer } from '@/components/math-answer';
 import { ModelChips } from '@/components/model-chips';
 import { ModelBrowser } from '@/components/model-browser';
@@ -27,11 +28,12 @@ import {
   waitForBatch,
   type OpenRouterBatch,
 } from '@/services/openrouter';
-import { loadJSON, saveJSON } from '@/services/storage';
+import { loadJSON, loadString, saveJSON, saveString } from '@/services/storage';
 import { saveTextFile, type SaveOutcome } from '@/services/files';
 
 const MAX_JOBS = 30;
 const HISTORY_STORAGE_KEY = 'openrouter.batches.history.v1';
+const SELECTED_STORAGE_KEY = 'openrouter.batches.selected.v1';
 
 type HistoryItem = {
   id: string;
@@ -100,6 +102,7 @@ export default function BatchesScreen() {
   const [hydrated, setHydrated] = useState(false);
   const [browseOpen, setBrowseOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const pollRuns = useRef(new Set<string>());
   const selectedItem = history.find((item) => item.id === selectedId) ?? null;
 
@@ -153,16 +156,23 @@ export default function BatchesScreen() {
 // Restore saved history and resume polling of in-flight batches.
   useEffect(() => {
     let cancelled = false;
-    void loadJSON<HistoryItem[]>(HISTORY_STORAGE_KEY, []).then((items) => {
+    void (async () => {
+      const items = await loadJSON<HistoryItem[]>(HISTORY_STORAGE_KEY, []);
+      const savedSelectedId = await loadString(SELECTED_STORAGE_KEY);
       if (cancelled) return;
       setHistory(items);
+      const restoredId =
+        savedSelectedId && items.some((item) => item.id === savedSelectedId)
+          ? savedSelectedId
+          : null;
+      setSelectedId(restoredId);
       for (const item of items) {
         if (item.batch && !isBatchTerminal(item.batch) && !item.error) {
           startPolling(item.id, item.prompts);
         }
       }
       setHydrated(true);
-    });
+    })();
     return () => {
       cancelled = true;
     };
@@ -173,6 +183,13 @@ export default function BatchesScreen() {
     if (!hydrated) return;
     void saveJSON(HISTORY_STORAGE_KEY, history);
   }, [history, hydrated]);
+
+  // Persist which batch is currently open, so the app reopens to the same
+  // detail view after a restart (guarded until hydration to avoid wiping it).
+  useEffect(() => {
+    if (!hydrated) return;
+    void saveString(SELECTED_STORAGE_KEY, selectedId ?? '');
+  }, [selectedId, hydrated]);
 
   const handleSubmit = async () => {
     const prompts = promptsText
@@ -277,6 +294,28 @@ export default function BatchesScreen() {
 
   const removeItem = (id: string) => {
     setHistory((prev) => prev.filter((item) => item.id !== id));
+    setSelectedId((prev) => (prev === id ? null : prev));
+  };
+
+  const handleDrawerSelect = (id: string) => {
+    setSelectedId(id);
+    setDrawerOpen(false);
+  };
+
+  const handleDrawerNew = () => {
+    setSelectedId(null);
+    setDrawerOpen(false);
+  };
+
+  const handleDrawerDelete = (id: string) => {
+    Alert.alert(t('batches.delete'), t('batches.deleteConfirm'), [
+      { text: t('common.cancel'), style: 'cancel' },
+      {
+        text: t('common.delete'),
+        style: 'destructive',
+        onPress: () => removeItem(id),
+      },
+    ]);
   };
 
   const jobCount = promptsText.split('\n').map((l) => l.trim()).filter(Boolean).length;
@@ -293,12 +332,21 @@ export default function BatchesScreen() {
 
   if (selectedItem) {
     return (
-      <ScrollView
-        style={[styles.scrollView, { backgroundColor: theme.background }]}
-        contentInset={insets}
-        contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
+      <>
+        <ScrollView
+          style={[styles.scrollView, { backgroundColor: theme.background }]}
+          contentInset={insets}
+          contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
         <ThemedView style={styles.container}>
           <View style={styles.headerRow}>
+            <Pressable
+              onPress={() => setDrawerOpen(true)}
+              hitSlop={8}
+              style={styles.menuButton}
+              accessibilityRole="button"
+              accessibilityLabel={t('batches.title')}>
+              <ThemedText style={styles.menuIcon}>☰</ThemedText>
+            </Pressable>
             <Pressable onPress={() => setSelectedId(null)} hitSlop={8} style={styles.backButton}>
               <ThemedText type="smallBold" themeColor="textSecondary">
                 ‹ {t('batches.back')}
@@ -316,17 +364,36 @@ export default function BatchesScreen() {
             onRemove={() => removeItem(selectedItem.id)}
           />
         </ThemedView>
-      </ScrollView>
+        </ScrollView>
+        <BatchDrawer
+          visible={drawerOpen}
+          dialogs={history}
+          activeId={selectedId}
+          onClose={() => setDrawerOpen(false)}
+          onSelect={handleDrawerSelect}
+          onNew={handleDrawerNew}
+          onDelete={handleDrawerDelete}
+        />
+      </>
     );
   }
 
   return (
-    <ScrollView
-      style={[styles.scrollView, { backgroundColor: theme.background }]}
+    <>
+      <ScrollView
+        style={[styles.scrollView, { backgroundColor: theme.background }]}
       contentInset={insets}
       contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
       <ThemedView style={styles.container}>
         <View style={styles.headerRow}>
+          <Pressable
+            onPress={() => setDrawerOpen(true)}
+            hitSlop={8}
+            style={styles.menuButton}
+            accessibilityRole="button"
+            accessibilityLabel={t('batches.title')}>
+            <ThemedText style={styles.menuIcon}>☰</ThemedText>
+          </Pressable>
           <ThemedText type="subtitle">{t('batches.title')}</ThemedText>
           {hasActive && <ActivityIndicator size="small" />}
           <View style={styles.headerSpacer} />
@@ -432,7 +499,17 @@ export default function BatchesScreen() {
           )}
         </View>
       </ThemedView>
-    </ScrollView>
+      </ScrollView>
+      <BatchDrawer
+        visible={drawerOpen}
+        dialogs={history}
+        activeId={selectedId}
+        onClose={() => setDrawerOpen(false)}
+        onSelect={handleDrawerSelect}
+        onNew={handleDrawerNew}
+        onDelete={handleDrawerDelete}
+      />
+    </>
   );
 }
 type BatchCardProps = {
@@ -634,6 +711,14 @@ const styles = StyleSheet.create({
   },
   backButton: {
     paddingVertical: Spacing.one,
+  },
+  menuButton: {
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.half,
+  },
+  menuIcon: {
+    fontSize: 22,
+    lineHeight: 26,
   },
   emptyHint: {
     textAlign: 'center',
