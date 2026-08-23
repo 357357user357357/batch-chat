@@ -339,11 +339,10 @@ export default function BatchesScreen() {
     (item) => item.batch && !isBatchTerminal(item.batch) && !item.error
   );
 
-  const contentPlatformStyle = {
+  const topBarInsets = {
     paddingTop: insets.top,
     paddingLeft: insets.left,
     paddingRight: insets.right,
-    paddingBottom: insets.bottom,
   };
 
   const searchQuery = search.trim().toLowerCase();
@@ -360,12 +359,9 @@ export default function BatchesScreen() {
 
   if (selectedItem) {
     return (
-      <>
-        <ScrollView
-          style={[styles.scrollView, { backgroundColor: theme.background }]}
-          contentInset={insets}
-          contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-        <ThemedView style={styles.container}>
+      <View style={[styles.flex, { backgroundColor: theme.background }]}>
+        <View
+          style={[styles.topBar, topBarInsets, { borderBottomColor: theme.backgroundSelected }]}>
           <View style={styles.headerRow}>
             <Pressable
               onPress={() => setDrawerOpen(true)}
@@ -382,16 +378,22 @@ export default function BatchesScreen() {
             </Pressable>
             <View style={styles.headerSpacer} />
           </View>
-          <BatchCard
-            item={selectedItem}
-            onCopyAll={() => copyAllAnswers(selectedItem)}
-            onSaveCsv={() => saveCsv(selectedItem)}
-            onExportJson={() => exportJson(selectedItem)}
-            onCopyPrompt={copyPrompt}
-            onCopyAnswer={copyAnswer}
-            onRemove={() => removeItem(selectedItem.id)}
-          />
-        </ThemedView>
+        </View>
+        <ScrollView
+          style={styles.flex}
+          contentInset={insets}
+          contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom }]}>
+          <ThemedView style={styles.container}>
+            <BatchCard
+              item={selectedItem}
+              onCopyAll={() => copyAllAnswers(selectedItem)}
+              onSaveCsv={() => saveCsv(selectedItem)}
+              onExportJson={() => exportJson(selectedItem)}
+              onCopyPrompt={copyPrompt}
+              onCopyAnswer={copyAnswer}
+              onRemove={() => removeItem(selectedItem.id)}
+            />
+          </ThemedView>
         </ScrollView>
         <BatchDrawer
           visible={drawerOpen}
@@ -402,17 +404,14 @@ export default function BatchesScreen() {
           onNew={handleDrawerNew}
           onDelete={handleDrawerDelete}
         />
-      </>
+      </View>
     );
   }
 
   return (
-    <>
-      <ScrollView
-        style={[styles.scrollView, { backgroundColor: theme.background }]}
-      contentInset={insets}
-      contentContainerStyle={[styles.contentContainer, contentPlatformStyle]}>
-      <ThemedView style={styles.container}>
+    <View style={[styles.flex, { backgroundColor: theme.background }]}>
+      <View
+        style={[styles.topBar, topBarInsets, { borderBottomColor: theme.backgroundSelected }]}>
         <View style={styles.headerRow}>
           <Pressable
             onPress={() => setDrawerOpen(true)}
@@ -426,9 +425,15 @@ export default function BatchesScreen() {
           {hasActive && <ActivityIndicator size="small" />}
           <View style={styles.headerSpacer} />
         </View>
-        <ThemedText themeColor="textSecondary" type="small">
-          {t('batches.subtitle')}
-        </ThemedText>
+      </View>
+      <ScrollView
+        style={styles.flex}
+        contentInset={insets}
+        contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom }]}>
+        <ThemedView style={styles.container}>
+          <ThemedText themeColor="textSecondary" type="small">
+            {t('batches.subtitle')}
+          </ThemedText>
 
         <ThemedView type="backgroundElement" style={styles.composeCard}>
           <TextInput
@@ -553,7 +558,7 @@ export default function BatchesScreen() {
         onNew={handleDrawerNew}
         onDelete={handleDrawerDelete}
       />
-    </>
+    </View>
   );
 }
 type BatchCardProps = {
@@ -691,6 +696,9 @@ function BatchCard({
   );
 }
 const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
   scrollView: {
     flex: 1,
   },
@@ -707,6 +715,11 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.two,
+  },
+  topBar: {
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
   headerSpacer: {
     flex: 1,
