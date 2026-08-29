@@ -204,6 +204,36 @@ export async function chat(
   return requestWithTimeout(options, messages);
 }
 
+/**
+ * Rewrites a raw user question so every mathematical expression is wrapped in
+ * LaTeX delimiters (`$…$` inline / `$$…$$` display). The chat screen runs this
+ * in parallel with the real answer so the asking bubble gets "corrected" while
+ * the model is still thinking, matching the rikkihub behavior.
+ *
+ * Wording, tone, punctuation, casing and meaning are preserved — the model is
+ * only allowed to add math delimiters/notation. Returns the corrected text
+ * ('' when the model returned nothing usable).
+ */
+export async function formatQuestionLatex(
+  question: string,
+  model: string
+): Promise<string> {
+  const completion = await chat(
+    [
+      {
+        role: "system",
+        content:
+          "You are a LaTeX formatting assistant. Rewrite the user's message so that every mathematical expression, formula, equation, fraction, variable, exponent, subscript, Greek letter, operator, and symbol is wrapped in LaTeX math delimiters. Use $...$ for inline math and $$...$$ for display math. Keep all words, tone, punctuation, casing, and meaning exactly unchanged. Do not answer the question and do not add any explanation. Return only the rewritten message.",
+      },
+      { role: "user", content: question },
+    ],
+    { model, temperature: 0, max_tokens: 2000, timeoutMs: 30_000 },
+  );
+
+  const corrected = completion.choices?.[0]?.message?.content ?? "";
+  return corrected.trim();
+}
+
 const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /**

@@ -27,6 +27,7 @@ import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
 import {
     chat,
+    formatQuestionLatex,
     OPENROUTER_MODEL,
     type OpenRouterMessage,
 } from "@/services/openrouter";
@@ -63,6 +64,8 @@ type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** LaTeX-corrected version of a user question, produced while the model thinks. */
+  latexContent?: string;
   error?: boolean;
 };
 
@@ -303,6 +306,34 @@ export default function ChatScreen() {
     ]);
   };
 
+  const correctQuestionLatex = async (
+    id: string,
+    raw: string,
+    model: string,
+  ) => {
+    try {
+      const corrected = await formatQuestionLatex(raw, model);
+      const cleaned = corrected
+        .replace(/^```(?:latex|tex)?\s*/i, "")
+        .replace(/\s*```\s*$/, "")
+        .trim();
+      if (!cleaned || cleaned === raw) return;
+      setDialogs((current) =>
+        current.map((dialog) => ({
+          ...dialog,
+          messages: dialog.messages.map((message) =>
+            message.id === id
+              ? { ...message, latexContent: cleaned }
+              : message,
+          ),
+        })),
+      );
+    } catch (error) {
+      // Best-effort: if correction is offline/slow, keep the raw question.
+      console.warn("[chat] latex correction failed", error);
+    }
+  };
+
   const handleSend = async () => {
     const text = input.trim();
     if (!text || sending || !activeId) return;
@@ -330,6 +361,8 @@ export default function ChatScreen() {
     );
     setInput("");
     setSending(true);
+    // Correct the asking bubble with LaTeX while the answer is being generated.
+    void correctQuestionLatex(userMessage.id, text, model);
 
     const history: OpenRouterMessage[] = nextMessages
       .slice(-HISTORY_WINDOW)
@@ -544,7 +577,7 @@ export default function ChatScreen() {
                       style={styles.userBubble}
                     >
                       <MathAnswer
-                        text={autoDelimitRawLatex(message.content)}
+                        text={autoDelimitRawLatex(message.latexContent ?? message.content)}
                         fontSize={17}
                       />
                     </ThemedView>
