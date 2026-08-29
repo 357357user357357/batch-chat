@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import * as Clipboard from "expo-clipboard";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -7,19 +8,19 @@ import {
   StyleSheet,
   TextInput,
   View,
-} from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Clipboard from 'expo-clipboard';
+} from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { BatchDrawer } from '@/components/batch-drawer';
-import { MathAnswer } from '@/components/math-answer';
-import { ModelChips } from '@/components/model-chips';
-import { ModelBrowser } from '@/components/model-browser';
-import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
-import { useI18n } from '@/i18n';
-import { useTheme } from '@/hooks/use-theme';
+import { AnimatedPressable } from "@/components/animated-pressable";
+import { BatchDrawer } from "@/components/batch-drawer";
+import { MathAnswer } from "@/components/math-answer";
+import { ModelPickerModal } from "@/components/model-picker-modal";
+import { ThemedText } from "@/components/themed-text";
+import { ThemedView } from "@/components/themed-view";
+import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
+import { useTheme } from "@/hooks/use-theme";
+import { useI18n } from "@/i18n";
+import { saveTextFile, type SaveOutcome } from "@/services/files";
 import {
   createBatch,
   extractBatchAnswers,
@@ -27,13 +28,12 @@ import {
   OPENROUTER_BATCH_MODEL,
   waitForBatch,
   type OpenRouterBatch,
-} from '@/services/openrouter';
-import { loadJSON, loadString, saveJSON, saveString } from '@/services/storage';
-import { saveTextFile, type SaveOutcome } from '@/services/files';
+} from "@/services/openrouter";
+import { loadJSON, loadString, saveJSON, saveString } from "@/services/storage";
 
 const MAX_JOBS = 30;
-const HISTORY_STORAGE_KEY = 'openrouter.batches.history.v1';
-const SELECTED_STORAGE_KEY = 'openrouter.batches.selected.v1';
+const HISTORY_STORAGE_KEY = "openrouter.batches.history.v1";
+const SELECTED_STORAGE_KEY = "openrouter.batches.selected.v1";
 
 type HistoryItem = {
   id: string;
@@ -42,32 +42,45 @@ type HistoryItem = {
   createdAt: number;
   batch: OpenRouterBatch | null;
   error?: string;
+  /** Custom name set by the user; falls back to `batchLabel(prompts)` when empty. */
+  title?: string;
 };
 
 function formatTime(timestamp: number): string {
-  return new Date(timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return new Date(timestamp).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 /** Short, single-line label for a batch: its first (main) question. */
 function batchLabel(prompts: string[]): string {
-  const first = (prompts.find((p) => p.trim()) ?? '').replace(/\s+/g, ' ').trim();
+  const first = (prompts.find((p) => p.trim()) ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   return first.length > 42 ? `${first.slice(0, 42)}…` : first;
 }
 
 /** Flattened questions + answers for search. */
 function batchSearchText(item: HistoryItem): string {
   const answers =
-    item.batch && item.batch.status === 'completed'
-      ? extractBatchAnswers(item.batch).map((a) => (a.ok ? a.answer ?? '' : a.error ?? ''))
+    item.batch && item.batch.status === "completed"
+      ? extractBatchAnswers(item.batch).map((a) =>
+          a.ok ? (a.answer ?? "") : (a.error ?? ""),
+        )
       : [];
-  return [...item.prompts, ...answers].join('\n');
+  return [...item.prompts, ...answers].join("\n");
 }
 
 /** Rows: batch_id;model;custom_id;prompt;answer (semicolon-separated, quoted). */
 export function buildCsv(item: HistoryItem): string {
   const answers =
-    item.batch && item.batch.status === 'completed' ? extractBatchAnswers(item.batch) : [];
-  const rows: string[][] = [['batch_id', 'model', 'custom_id', 'prompt', 'answer']];
+    item.batch && item.batch.status === "completed"
+      ? extractBatchAnswers(item.batch)
+      : [];
+  const rows: string[][] = [
+    ["batch_id", "model", "custom_id", "prompt", "answer"],
+  ];
   item.prompts.forEach((prompt, index) => {
     const answer = answers.find((a) => a.custom_id === `req-${index + 1}`);
     rows.push([
@@ -75,12 +88,16 @@ export function buildCsv(item: HistoryItem): string {
       item.model,
       `req-${index + 1}`,
       prompt,
-      answer ? (answer.ok ? answer.answer ?? '' : answer.error ?? '') : '',
+      answer ? (answer.ok ? (answer.answer ?? "") : (answer.error ?? "")) : "",
     ]);
   });
   return rows
-    .map((row) => row.map((cell) => `"${String(cell ?? '').replace(/"/g, '""')}"`).join(';'))
-    .join('\n');
+    .map((row) =>
+      row
+        .map((cell) => `"${String(cell ?? "").replace(/"/g, '""')}"`)
+        .join(";"),
+    )
+    .join("\n");
 }
 
 /** Full structured dump of one batch for the JSON export (journal). */
@@ -93,10 +110,10 @@ function exportJournal(item: HistoryItem): unknown {
     batch_id: item.id,
     model: item.model,
     created_at: new Date(item.createdAt).toISOString(),
-    status: item.batch?.status ?? 'pending',
+    status: item.batch?.status ?? "pending",
     prompts: item.prompts,
     answers:
-      item.batch && item.batch.status === 'completed'
+      item.batch && item.batch.status === "completed"
         ? extractBatchAnswers(item.batch)
         : [],
   };
@@ -110,20 +127,23 @@ export default function BatchesScreen() {
     ...safeAreaInsets,
     bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
   };
-  const [promptsText, setPromptsText] = useState('');
+  const [promptsText, setPromptsText] = useState("");
   const [model, setModel] = useState(OPENROUTER_BATCH_MODEL);
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [browseOpen, setBrowseOpen] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const pollRuns = useRef(new Set<string>());
   const selectedItem = history.find((item) => item.id === selectedId) ?? null;
 
   const updateItem = useCallback((id: string, patch: Partial<HistoryItem>) => {
-    setHistory((prev) => prev.map((item) => (item.id === id ? { ...item, ...patch } : item)));
+    setHistory((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+    );
   }, []);
 
   // Polls a batch in the background without blocking the UI; re-runs when the
@@ -149,7 +169,7 @@ export default function BatchesScreen() {
         }
       })();
     },
-    [updateItem]
+    [updateItem],
   );
 
   const trackBatch = useCallback(
@@ -167,9 +187,9 @@ export default function BatchesScreen() {
       ]);
       startPolling(created.id, prompts);
     },
-    [startPolling]
+    [startPolling],
   );
-// Restore saved history and resume polling of in-flight batches.
+  // Restore saved history and resume polling of in-flight batches.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
@@ -204,35 +224,37 @@ export default function BatchesScreen() {
   // detail view after a restart (guarded until hydration to avoid wiping it).
   useEffect(() => {
     if (!hydrated) return;
-    void saveString(SELECTED_STORAGE_KEY, selectedId ?? '');
+    void saveString(SELECTED_STORAGE_KEY, selectedId ?? "");
   }, [selectedId, hydrated]);
 
   const handleSubmit = async () => {
     const prompts = promptsText
-      .split('\n')
+      .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)
       .slice(0, MAX_JOBS);
     if (!prompts.length) {
-      Alert.alert(t('batches.emptyTitle'), t('batches.emptyBody'));
+      Alert.alert(t("batches.emptyTitle"), t("batches.emptyBody"));
       return;
     }
     if (!model.trim()) {
-      Alert.alert(t('batches.modelTitle'), t('batches.modelBody'));
+      Alert.alert(t("batches.modelTitle"), t("batches.modelBody"));
       return;
     }
     setSubmitting(true);
     try {
       const created = await createBatch(
-        prompts.map((content) => ({ messages: [{ role: 'user' as const, content }] })),
-        model.trim()
+        prompts.map((content) => ({
+          messages: [{ role: "user" as const, content }],
+        })),
+        model.trim(),
       );
       trackBatch(created, prompts);
-      setPromptsText('');
+      setPromptsText("");
     } catch (error) {
       Alert.alert(
-        t('batches.createError'),
-        error instanceof Error ? error.message : String(error)
+        t("batches.createError"),
+        error instanceof Error ? error.message : String(error),
       );
     } finally {
       setSubmitting(false);
@@ -242,20 +264,20 @@ export default function BatchesScreen() {
   const copyTextSafe = async (label: string, text: string) => {
     try {
       await Clipboard.setStringAsync(text);
-      Alert.alert(t('batches.copyLabel'), t('batches.copyBody', { label }));
+      Alert.alert(t("batches.copyLabel"), t("batches.copyBody", { label }));
     } catch (error) {
       Alert.alert(
-        t('batches.copyFail'),
-        error instanceof Error ? error.message : String(error)
+        t("batches.copyFail"),
+        error instanceof Error ? error.message : String(error),
       );
     }
   };
 
   // Copies the raw answer text, LaTeX formulas (`$$…$$`) included.
   const copyPrompt = (prompt: string) =>
-    copyTextSafe(t('batches.copyPromptLabel'), prompt);
+    copyTextSafe(t("batches.copyPromptLabel"), prompt);
   const copyAnswer = (answer: string) =>
-    copyTextSafe(t('batches.copyAnswersLabel'), answer);
+    copyTextSafe(t("batches.copyAnswersLabel"), answer);
 
   const copyAllAnswers = async (item: HistoryItem) => {
     if (!item.batch) return;
@@ -265,33 +287,40 @@ export default function BatchesScreen() {
         const answer = answers.find((a) => a.custom_id === `req-${index + 1}`);
         const value = answer
           ? answer.ok
-            ? (answer.answer ?? '')
-            : `❌ ${answer.error ?? ''}`
-          : '';
+            ? (answer.answer ?? "")
+            : `❌ ${answer.error ?? ""}`
+          : "";
         return `Q: ${prompt}\nA: ${value}`;
       })
-      .join('\n\n');
-    await copyTextSafe(t('batches.copyAnswersLabel'), text);
+      .join("\n\n");
+    await copyTextSafe(t("batches.copyAnswersLabel"), text);
   };
 
   const handleSaveOutcome = (outcome: SaveOutcome) => {
-    if (outcome === 'saved') {
-      Alert.alert(t('common.saved'), t('batches.saved'));
-    } else if (outcome === 'shared') {
-      Alert.alert(t('common.saved'), t('batches.shared'));
-    } else if (outcome === 'canceled') {
+    if (outcome === "saved") {
+      Alert.alert(t("common.saved"), t("batches.saved"));
+    } else if (outcome === "shared") {
+      Alert.alert(t("common.saved"), t("batches.shared"));
+    } else if (outcome === "canceled") {
       // user dismissed the system picker, not an error
     } else {
-      Alert.alert(t('batches.fileFail'));
+      Alert.alert(t("batches.fileFail"));
     }
   };
 
   const saveCsv = async (item: HistoryItem) => {
     try {
-      const outcome = await saveTextFile(`${item.id}.csv`, buildCsv(item), 'text/csv');
+      const outcome = await saveTextFile(
+        `${item.id}.csv`,
+        buildCsv(item),
+        "text/csv",
+      );
       handleSaveOutcome(outcome);
     } catch (error) {
-      Alert.alert(t('batches.fileFail'), error instanceof Error ? error.message : String(error));
+      Alert.alert(
+        t("batches.fileFail"),
+        error instanceof Error ? error.message : String(error),
+      );
     }
   };
 
@@ -300,11 +329,14 @@ export default function BatchesScreen() {
       const outcome = await saveTextFile(
         `${item.id}.json`,
         buildJson(item),
-        'application/json'
+        "application/json",
       );
       handleSaveOutcome(outcome);
     } catch (error) {
-      Alert.alert(t('batches.fileFail'), error instanceof Error ? error.message : String(error));
+      Alert.alert(
+        t("batches.fileFail"),
+        error instanceof Error ? error.message : String(error),
+      );
     }
   };
 
@@ -316,27 +348,45 @@ export default function BatchesScreen() {
   const handleDrawerSelect = (id: string) => {
     setSelectedId(id);
     setDrawerOpen(false);
+    setTitleDraft(null);
   };
 
   const handleDrawerNew = () => {
     setSelectedId(null);
     setDrawerOpen(false);
+    setTitleDraft(null);
   };
 
   const handleDrawerDelete = (id: string) => {
-    Alert.alert(t('batches.delete'), t('batches.deleteConfirm'), [
-      { text: t('common.cancel'), style: 'cancel' },
+    Alert.alert(t("batches.delete"), t("batches.deleteConfirm"), [
+      { text: t("common.cancel"), style: "cancel" },
       {
-        text: t('common.delete'),
-        style: 'destructive',
+        text: t("common.delete"),
+        style: "destructive",
         onPress: () => removeItem(id),
       },
     ]);
   };
 
-  const jobCount = promptsText.split('\n').map((l) => l.trim()).filter(Boolean).length;
+  const startRenaming = () =>
+    setTitleDraft(
+      selectedItem?.title ?? batchLabel(selectedItem?.prompts ?? []),
+    );
+
+  const saveRenaming = () => {
+    if (titleDraft !== null && selectedId) {
+      const trimmed = titleDraft.trim();
+      updateItem(selectedId, { title: trimmed });
+    }
+    setTitleDraft(null);
+  };
+
+  const jobCount = promptsText
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean).length;
   const hasActive = history.some(
-    (item) => item.batch && !isBatchTerminal(item.batch) && !item.error
+    (item) => item.batch && !isBatchTerminal(item.batch) && !item.error,
   );
 
   const topBarInsets = {
@@ -347,13 +397,16 @@ export default function BatchesScreen() {
 
   const searchQuery = search.trim().toLowerCase();
   const filteredHistory = searchQuery
-    ? history.filter((item) => batchSearchText(item).toLowerCase().includes(searchQuery))
+    ? history.filter((item) =>
+        batchSearchText(item).toLowerCase().includes(searchQuery),
+      )
     : history;
   const drawerDialogs = history.map((item) => ({
     id: item.id,
     model: item.model,
     prompts: item.prompts,
     createdAt: item.createdAt,
+    title: item.title,
     searchText: batchSearchText(item),
   }));
 
@@ -361,28 +414,69 @@ export default function BatchesScreen() {
     return (
       <View style={[styles.flex, { backgroundColor: theme.background }]}>
         <View
-          style={[styles.topBar, topBarInsets, { borderBottomColor: theme.backgroundSelected }]}>
+          style={[
+            styles.topBar,
+            topBarInsets,
+            { borderBottomColor: theme.backgroundSelected },
+          ]}
+        >
           <View style={styles.headerRow}>
             <Pressable
               onPress={() => setDrawerOpen(true)}
               hitSlop={8}
               style={styles.menuButton}
               accessibilityRole="button"
-              accessibilityLabel={t('batches.title')}>
+              accessibilityLabel={t("batches.title")}
+            >
               <ThemedText style={styles.menuIcon}>☰</ThemedText>
             </Pressable>
-            <Pressable onPress={() => setSelectedId(null)} hitSlop={8} style={styles.backButton}>
+            <Pressable
+              onPress={() => setSelectedId(null)}
+              hitSlop={8}
+              style={styles.backButton}
+            >
               <ThemedText type="smallBold" themeColor="textSecondary">
-                ‹ {t('batches.back')}
+                ‹ {t("batches.back")}
               </ThemedText>
             </Pressable>
+            {titleDraft !== null ? (
+              <TextInput
+                value={titleDraft}
+                onChangeText={setTitleDraft}
+                onSubmitEditing={saveRenaming}
+                onBlur={saveRenaming}
+                autoFocus
+                placeholder={t("batches.renamePlaceholder")}
+                placeholderTextColor={theme.textSecondary}
+                style={[
+                  styles.headerTitleInput,
+                  { color: theme.text, borderColor: theme.backgroundSelected },
+                ]}
+              />
+            ) : (
+              <Pressable
+                onPress={startRenaming}
+                style={styles.headerTitle}
+                hitSlop={8}
+              >
+                <ThemedText type="smallBold" numberOfLines={1}>
+                  {selectedItem?.title ||
+                    batchLabel(selectedItem?.prompts ?? []) ||
+                    t("batches.untitled")}
+                </ThemedText>
+              </Pressable>
+            )}
             <View style={styles.headerSpacer} />
           </View>
         </View>
         <ScrollView
           style={styles.flex}
           contentInset={insets}
-          contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom }]}>
+          contentContainerStyle={[
+            styles.contentContainer,
+            { paddingBottom: insets.bottom },
+          ]}
+        >
           <ThemedView style={styles.container}>
             <BatchCard
               item={selectedItem}
@@ -411,17 +505,23 @@ export default function BatchesScreen() {
   return (
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
       <View
-        style={[styles.topBar, topBarInsets, { borderBottomColor: theme.backgroundSelected }]}>
+        style={[
+          styles.topBar,
+          topBarInsets,
+          { borderBottomColor: theme.backgroundSelected },
+        ]}
+      >
         <View style={styles.headerRow}>
           <Pressable
             onPress={() => setDrawerOpen(true)}
             hitSlop={8}
             style={styles.menuButton}
             accessibilityRole="button"
-            accessibilityLabel={t('batches.title')}>
+            accessibilityLabel={t("batches.title")}
+          >
             <ThemedText style={styles.menuIcon}>☰</ThemedText>
           </Pressable>
-          <ThemedText type="subtitle">{t('batches.title')}</ThemedText>
+          <ThemedText type="subtitle">{t("batches.title")}</ThemedText>
           {hasActive && <ActivityIndicator size="small" />}
           <View style={styles.headerSpacer} />
         </View>
@@ -429,21 +529,83 @@ export default function BatchesScreen() {
       <ScrollView
         style={styles.flex}
         contentInset={insets}
-        contentContainerStyle={[styles.contentContainer, { paddingBottom: insets.bottom }]}>
+        contentContainerStyle={[
+          styles.contentContainer,
+          { paddingBottom: insets.bottom },
+        ]}
+      >
         <ThemedView style={styles.container}>
           <ThemedText themeColor="textSecondary" type="small">
-            {t('batches.subtitle')}
+            {t("batches.subtitle")}
           </ThemedText>
 
-        <ThemedView type="backgroundElement" style={styles.composeCard}>
+          <ThemedView type="backgroundElement" style={styles.composeCard}>
+            <TextInput
+              value={promptsText}
+              onChangeText={setPromptsText}
+              placeholder={t("batches.promptPlaceholder")}
+              placeholderTextColor={theme.textSecondary}
+              multiline
+              style={[
+                styles.input,
+                {
+                  color: theme.text,
+                  backgroundColor: theme.background,
+                  borderColor: theme.backgroundSelected,
+                },
+              ]}
+            />
+            <ThemedText type="code" themeColor="textSecondary">
+              {t("batches.jobCount", { count: jobCount, max: MAX_JOBS })}
+            </ThemedText>
+
+            <Pressable
+              onPress={() => setModelPickerOpen(true)}
+              hitSlop={8}
+              style={styles.modelButton}
+            >
+              <ThemedText
+                type="code"
+                themeColor="textSecondary"
+                numberOfLines={1}
+              >
+                {t("models.selected", { model })}
+              </ThemedText>
+            </Pressable>
+
+            <AnimatedPressable
+              disabled={submitting || jobCount === 0}
+              onPress={() => void handleSubmit()}
+              style={[
+                styles.submitButton,
+                (submitting || jobCount === 0) && styles.pressedDim,
+              ]}
+            >
+              {submitting ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <ThemedText type="smallBold" themeColor="backgroundElement">
+                  {t("batches.send")}
+                </ThemedText>
+              )}
+            </AnimatedPressable>
+          </ThemedView>
+          <ModelPickerModal
+            visible={modelPickerOpen}
+            mode="batch"
+            value={model}
+            onChange={setModel}
+            onClose={() => setModelPickerOpen(false)}
+          />
+
           <TextInput
-            value={promptsText}
-            onChangeText={setPromptsText}
-            placeholder={t('batches.promptPlaceholder')}
+            value={search}
+            onChangeText={setSearch}
+            placeholder={t("batches.searchPlaceholder")}
             placeholderTextColor={theme.textSecondary}
-            multiline
+            autoCorrect={false}
             style={[
-              styles.input,
+              styles.searchInput,
               {
                 color: theme.text,
                 backgroundColor: theme.background,
@@ -451,103 +613,75 @@ export default function BatchesScreen() {
               },
             ]}
           />
-          <ThemedText type="code" themeColor="textSecondary">
-            {t('batches.jobCount', { count: jobCount, max: MAX_JOBS })}
-          </ThemedText>
 
-          <ModelChips mode="batch" value={model} onChange={setModel} visibleCount={6} />
-
-          <Pressable
-            onPress={() => setBrowseOpen((v) => !v)}
-            hitSlop={8}
-            style={styles.browseToggle}>
-            <ThemedText type="code" themeColor="textSecondary">
-              {browseOpen ? t('common.close') : t('models.title')}
-            </ThemedText>
-          </Pressable>
-          {browseOpen ? (
-            <ModelBrowser
-              selectedId={model}
-              onSelect={(id) => {
-                setModel(id);
-                setBrowseOpen(false);
-              }}
-            />
-          ) : null}
-
-          <Pressable
-            disabled={submitting || jobCount === 0}
-            onPress={() => void handleSubmit()}
-            style={({ pressed }) => [
-              styles.submitButton,
-              (pressed || submitting || jobCount === 0) && styles.pressedDim,
-            ]}>
-            {submitting ? (
-              <ActivityIndicator size="small" color="#ffffff" />
-            ) : (
-              <ThemedText type="smallBold" themeColor="backgroundElement">
-                {t('batches.send')}
+          <View style={styles.history}>
+            {filteredHistory.length === 0 ? (
+              <ThemedText
+                themeColor="textSecondary"
+                type="small"
+                style={styles.emptyHint}
+              >
+                {searchQuery ? t("common.noMatch") : t("batches.historyEmpty")}
               </ThemedText>
-            )}
-          </Pressable>
-        </ThemedView>
-
-        <TextInput
-          value={search}
-          onChangeText={setSearch}
-          placeholder={t('batches.searchPlaceholder')}
-          placeholderTextColor={theme.textSecondary}
-          autoCorrect={false}
-          style={[
-            styles.searchInput,
-            {
-              color: theme.text,
-              backgroundColor: theme.background,
-              borderColor: theme.backgroundSelected,
-            },
-          ]}
-        />
-
-        <View style={styles.history}>
-          {filteredHistory.length === 0 ? (
-            <ThemedText themeColor="textSecondary" type="small" style={styles.emptyHint}>
-              {searchQuery ? t('common.noMatch') : t('batches.historyEmpty')}
-            </ThemedText>
-          ) : (
-            filteredHistory.map((item) => {
-              const status = item.error ? 'error' : item.batch?.status ?? 'pending';
-              const completed = item.batch?.status === 'completed';
-              return (
-                <Pressable
-                  key={item.id}
-                  onPress={() => setSelectedId(item.id)}
-                  style={[styles.dialogCard, { borderColor: theme.backgroundSelected }]}>
-                  <View style={styles.dialogRow}>
-                    <ThemedText type="smallBold" numberOfLines={1} style={styles.dialogTitle}>
-                      {batchLabel(item.prompts) || t('batches.untitled')}
-                    </ThemedText>
-                    <ThemedView
-                      style={[
-                        styles.statusBadge,
-                        completed ? styles.statusOk : status === 'error' ? styles.statusErr : null,
-                      ]}>
-                      <ThemedText type="code" themeColor="textSecondary">
-                        {t(`status.${status}` as never)}
+            ) : (
+              filteredHistory.map((item) => {
+                const status = item.error
+                  ? "error"
+                  : (item.batch?.status ?? "pending");
+                const completed = item.batch?.status === "completed";
+                return (
+                  <Pressable
+                    key={item.id}
+                    onPress={() => setSelectedId(item.id)}
+                    style={[
+                      styles.dialogCard,
+                      { borderColor: theme.backgroundSelected },
+                    ]}
+                  >
+                    <View style={styles.dialogRow}>
+                      <ThemedText
+                        type="smallBold"
+                        numberOfLines={1}
+                        style={styles.dialogTitle}
+                      >
+                        {item.title ||
+                          batchLabel(item.prompts) ||
+                          t("batches.untitled")}
                       </ThemedText>
-                    </ThemedView>
-                  </View>
-                  <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
-                    {item.model}
-                  </ThemedText>
-                  <ThemedText type="code" themeColor="textSecondary">
-                    {formatTime(item.createdAt)} · {t('batches.questionsCount', { count: item.prompts.length })}
-                  </ThemedText>
-                </Pressable>
-              );
-            })
-          )}
-        </View>
-      </ThemedView>
+                      <ThemedView
+                        style={[
+                          styles.statusBadge,
+                          completed
+                            ? styles.statusOk
+                            : status === "error"
+                              ? styles.statusErr
+                              : null,
+                        ]}
+                      >
+                        <ThemedText type="code" themeColor="textSecondary">
+                          {t(`status.${status}` as never)}
+                        </ThemedText>
+                      </ThemedView>
+                    </View>
+                    <ThemedText
+                      type="code"
+                      themeColor="textSecondary"
+                      numberOfLines={1}
+                    >
+                      {item.model}
+                    </ThemedText>
+                    <ThemedText type="code" themeColor="textSecondary">
+                      {formatTime(item.createdAt)} ·{" "}
+                      {t("batches.questionsCount", {
+                        count: item.prompts.length,
+                      })}
+                    </ThemedText>
+                  </Pressable>
+                );
+              })
+            )}
+          </View>
+        </ThemedView>
       </ScrollView>
       <BatchDrawer
         visible={drawerOpen}
@@ -581,9 +715,10 @@ function BatchCard({
   onRemove,
 }: BatchCardProps) {
   const { t } = useI18n();
-  const status = item.error ? 'error' : item.batch?.status ?? 'pending';
-  const completed = item.batch?.status === 'completed';
-  const answers = item.batch && completed ? extractBatchAnswers(item.batch) : [];
+  const status = item.error ? "error" : (item.batch?.status ?? "pending");
+  const completed = item.batch?.status === "completed";
+  const answers =
+    item.batch && completed ? extractBatchAnswers(item.batch) : [];
   const counts = item.batch?.request_counts;
 
   return (
@@ -600,8 +735,13 @@ function BatchCard({
         <View
           style={[
             styles.statusBadge,
-            completed ? styles.statusOk : status === 'error' ? styles.statusErr : null,
-          ]}>
+            completed
+              ? styles.statusOk
+              : status === "error"
+                ? styles.statusErr
+                : null,
+          ]}
+        >
           <ThemedText type="code" themeColor="text">
             {t(`status.${status}` as never)}
           </ThemedText>
@@ -610,8 +750,13 @@ function BatchCard({
 
       {counts ? (
         <ThemedText type="code" themeColor="textSecondary">
-          {t('batches.doneCount', { completed: counts.completed, total: counts.total })}
-          {counts.failed > 0 ? t('batches.errorsCount', { failed: counts.failed }) : ''}
+          {t("batches.doneCount", {
+            completed: counts.completed,
+            total: counts.total,
+          })}
+          {counts.failed > 0
+            ? t("batches.errorsCount", { failed: counts.failed })
+            : ""}
         </ThemedText>
       ) : null}
 
@@ -624,15 +769,19 @@ function BatchCard({
       {answers.length > 0 ? (
         <View style={styles.answers}>
           {answers.map((answer) => {
-            const index = Number((answer.custom_id || 'req-1').replace(/\D/g, '')) - 1;
-            const prompt = item.prompts[index] ?? '';
+            const index =
+              Number((answer.custom_id || "req-1").replace(/\D/g, "")) - 1;
+            const prompt = item.prompts[index] ?? "";
             return (
               <View key={answer.custom_id} style={styles.answerBlock}>
                 <View style={styles.answerPromptRow}>
                   <ThemedText type="smallBold" style={styles.answerPrompt}>
                     {prompt}
                   </ThemedText>
-                  <Pressable onPress={() => onCopyPrompt(prompt)} style={styles.copyIcon}>
+                  <Pressable
+                    onPress={() => onCopyPrompt(prompt)}
+                    style={styles.copyIcon}
+                  >
                     <ThemedText type="code" themeColor="textSecondary">
                       ⧉
                     </ThemedText>
@@ -640,19 +789,20 @@ function BatchCard({
                 </View>
                 {answer.ok ? (
                   <>
-                    <MathAnswer text={answer.answer ?? ''} />
+                    <MathAnswer text={answer.answer ?? ""} />
                     <Pressable
-                      onPress={() => onCopyAnswer(answer.answer ?? '')}
+                      onPress={() => onCopyAnswer(answer.answer ?? "")}
                       hitSlop={8}
-                      style={styles.copyAnswerButton}>
+                      style={styles.copyAnswerButton}
+                    >
                       <ThemedText type="code" themeColor="textSecondary">
-                        ⧉ {t('batches.copyAnswer')}
+                        ⧉ {t("batches.copyAnswer")}
                       </ThemedText>
                     </Pressable>
                   </>
                 ) : (
                   <ThemedText type="small" style={styles.errorText}>
-                    ❌ {answer.error ?? t('batches.noAnswer')}
+                    ❌ {answer.error ?? t("batches.noAnswer")}
                   </ThemedText>
                 )}
               </View>
@@ -665,30 +815,42 @@ function BatchCard({
         <Pressable
           disabled={!completed}
           onPress={onCopyAll}
-          style={[styles.actionButton, !completed && styles.pressedDim]}>
-          <ThemedText type="small" themeColor={completed ? 'textSecondary' : undefined}>
-            {t('batches.copyAll')}
+          style={[styles.actionButton, !completed && styles.pressedDim]}
+        >
+          <ThemedText
+            type="small"
+            themeColor={completed ? "textSecondary" : undefined}
+          >
+            {t("batches.copyAll")}
           </ThemedText>
         </Pressable>
         <Pressable
           disabled={!completed}
           onPress={onSaveCsv}
-          style={[styles.actionButton, !completed && styles.pressedDim]}>
-          <ThemedText type="small" themeColor={completed ? 'textSecondary' : undefined}>
-            {t('batches.saveCsv')}
+          style={[styles.actionButton, !completed && styles.pressedDim]}
+        >
+          <ThemedText
+            type="small"
+            themeColor={completed ? "textSecondary" : undefined}
+          >
+            {t("batches.saveCsv")}
           </ThemedText>
         </Pressable>
         <Pressable
           disabled={!completed}
           onPress={onExportJson}
-          style={[styles.actionButton, !completed && styles.pressedDim]}>
-          <ThemedText type="small" themeColor={completed ? 'textSecondary' : undefined}>
-            {t('batches.exportJson')}
+          style={[styles.actionButton, !completed && styles.pressedDim]}
+        >
+          <ThemedText
+            type="small"
+            themeColor={completed ? "textSecondary" : undefined}
+          >
+            {t("batches.exportJson")}
           </ThemedText>
         </Pressable>
         <Pressable onPress={onRemove} style={styles.actionButton}>
           <ThemedText type="small" themeColor="textSecondary">
-            {t('batches.delete')}
+            {t("batches.delete")}
           </ThemedText>
         </Pressable>
       </View>
@@ -704,16 +866,16 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     maxWidth: MaxContentWidth,
-    width: '100%',
-    alignSelf: 'center',
+    width: "100%",
+    alignSelf: "center",
     paddingHorizontal: Spacing.three,
   },
   container: {
     gap: Spacing.three,
   },
   headerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: Spacing.two,
   },
   topBar: {
@@ -723,6 +885,18 @@ const styles = StyleSheet.create({
   },
   headerSpacer: {
     flex: 1,
+  },
+  headerTitle: {
+    flex: 1,
+  },
+  headerTitleInput: {
+    flex: 1,
+    fontSize: 15,
+    fontWeight: "700",
+    borderWidth: 1,
+    borderRadius: Spacing.one,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
   },
   composeCard: {
     borderRadius: Spacing.four,
@@ -734,8 +908,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderRadius: Spacing.two,
     padding: Spacing.three,
-    fontSize: 15,
-    textAlignVertical: 'top',
+    fontSize: 17,
+    textAlignVertical: "top",
   },
   searchInput: {
     borderWidth: 1,
@@ -745,15 +919,15 @@ const styles = StyleSheet.create({
     fontSize: 15,
     minHeight: 44,
   },
-  browseToggle: {
-    alignSelf: 'flex-start',
+  modelButton: {
+    alignSelf: "flex-start",
     paddingVertical: 2,
   },
   submitButton: {
-    backgroundColor: '#3c87f7',
+    backgroundColor: "#3c87f7",
     borderRadius: Spacing.two,
     paddingVertical: Spacing.three,
-    alignItems: 'center',
+    alignItems: "center",
   },
   history: {
     gap: Spacing.three,
@@ -766,9 +940,9 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   dialogRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: Spacing.two,
   },
   dialogTitle: {
@@ -786,7 +960,7 @@ const styles = StyleSheet.create({
     lineHeight: 26,
   },
   emptyHint: {
-    textAlign: 'center',
+    textAlign: "center",
     paddingVertical: Spacing.four,
   },
   card: {
@@ -795,9 +969,9 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
   },
   cardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: Spacing.two,
   },
   cardHeaderText: {
@@ -805,19 +979,19 @@ const styles = StyleSheet.create({
     gap: 2,
   },
   statusBadge: {
-    backgroundColor: 'rgba(128,128,128,0.2)',
+    backgroundColor: "rgba(128,128,128,0.2)",
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.two,
     paddingVertical: 2,
   },
   statusOk: {
-    backgroundColor: 'rgba(40,167,69,0.25)',
+    backgroundColor: "rgba(40,167,69,0.25)",
   },
   statusErr: {
-    backgroundColor: 'rgba(220,53,69,0.25)',
+    backgroundColor: "rgba(220,53,69,0.25)",
   },
   errorText: {
-    color: '#e05252',
+    color: "#e05252",
   },
   answers: {
     gap: Spacing.three,
@@ -826,24 +1000,25 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   answerPromptRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: Spacing.two,
   },
   answerPrompt: {
     flex: 1,
+    fontSize: 17,
   },
   copyIcon: {
     paddingHorizontal: Spacing.two,
     paddingVertical: 2,
   },
   copyAnswerButton: {
-    alignSelf: 'flex-end',
+    alignSelf: "flex-end",
     paddingVertical: 2,
   },
   cardActions: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: "row",
+    flexWrap: "wrap",
     gap: Spacing.three,
     marginTop: Spacing.one,
   },

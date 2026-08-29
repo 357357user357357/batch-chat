@@ -1,38 +1,50 @@
 import * as Clipboard from "expo-clipboard";
+import * as WebBrowser from "expo-web-browser";
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  View,
+    ActivityIndicator,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    useWindowDimensions,
+    View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+import { AnimatedPressable } from "@/components/animated-pressable";
 import { ChatDrawer } from "@/components/chat-drawer";
 import { MathAnswer } from "@/components/math-answer";
-import { ModelBrowser } from "@/components/model-browser";
-import { ModelChips } from "@/components/model-chips";
+import { ModelPickerModal } from "@/components/model-picker-modal";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
 import {
-  chat,
-  OPENROUTER_MODEL,
-  type OpenRouterMessage,
+    chat,
+    OPENROUTER_MODEL,
+    type OpenRouterMessage,
 } from "@/services/openrouter";
 import { loadJSON, loadString, saveJSON, saveString } from "@/services/storage";
 import {
-  resolveTavilyApiKey,
-  searchWeb,
-  webSearchContext,
+    resolveTavilyApiKey,
+    searchWeb,
+    webSearchContext,
 } from "@/services/tavily";
+
+/** Below this width we treat the screen as a phone (vs. tablet/desktop). */
+const PHONE_WIDTH_BREAKPOINT = 768;
+
+/** True for fetch/network failures (offline), as opposed to API/HTTP errors. */
+function isNetworkError(error: unknown): boolean {
+  if (error instanceof TypeError) return true;
+  const message = error instanceof Error ? error.message : String(error);
+  return /network request failed|failed to fetch|no internet/i.test(message);
+}
 
 const DIALOGS_STORAGE_KEY = "openrouter.dialogs.v1";
 const ACTIVE_DIALOG_STORAGE_KEY = "openrouter.active-dialog.v1";
@@ -90,6 +102,8 @@ export default function ChatScreen() {
   const theme = useTheme();
   const { t } = useI18n();
   const safeAreaInsets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
+  const isPhoneView = windowWidth < PHONE_WIDTH_BREAKPOINT;
   const insets = {
     ...safeAreaInsets,
     bottom: safeAreaInsets.bottom + BottomTabInset + Spacing.three,
@@ -100,7 +114,8 @@ export default function ChatScreen() {
   const [input, setInput] = useState("");
   const [sending, setSending] = useState(false);
   const [hydrated, setHydrated] = useState(false);
-  const [browseOpen, setBrowseOpen] = useState(false);
+  const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [search, setSearch] = useState("");
   const scrollRef = useRef<ScrollView>(null);
@@ -184,17 +199,20 @@ export default function ChatScreen() {
     setDialogs((current) => [...current, dialog]);
     setActiveId(dialog.id);
     setInput("");
-    setBrowseOpen(false);
+    setModelPickerOpen(false);
+    setTitleDraft(null);
   };
 
   const openDialog = (id: string) => {
     setActiveId(id);
-    setBrowseOpen(false);
+    setModelPickerOpen(false);
+    setTitleDraft(null);
   };
 
   const goBack = () => {
     setActiveId(null);
-    setBrowseOpen(false);
+    setModelPickerOpen(false);
+    setTitleDraft(null);
   };
 
   const handleDrawerClose = () => setDrawerOpen(false);
@@ -231,6 +249,20 @@ export default function ChatScreen() {
           : dialog,
       ),
     );
+  };
+
+  const startRenaming = () => setTitleDraft(activeDialog?.title ?? "");
+
+  const saveRenaming = () => {
+    if (titleDraft !== null && activeId) {
+      const trimmed = titleDraft.trim();
+      setDialogs((current) =>
+        current.map((dialog) =>
+          dialog.id === activeId ? { ...dialog, title: trimmed } : dialog,
+        ),
+      );
+    }
+    setTitleDraft(null);
   };
 
   const handleDelete = () => {
@@ -311,7 +343,13 @@ export default function ChatScreen() {
             maxResults: 3,
             searchDepth: "basic",
             includeAnswer: true,
-          }).catch(() => [])
+          }).catch((error: unknown) => {
+            // Offline on a phone: let the user search directly on tavily.com.
+            if (isPhoneView && isNetworkError(error)) {
+              void WebBrowser.openBrowserAsync("https://tavily.com");
+            }
+            return [];
+          })
         : [];
 
       const requestMessages: OpenRouterMessage[] = [
@@ -428,13 +466,31 @@ export default function ChatScreen() {
                     ‹ {t("chat.back")}
                   </ThemedText>
                 </Pressable>
-                <ThemedText
-                  type="smallBold"
-                  numberOfLines={1}
-                  style={styles.headerTitle}
-                >
-                  {activeDialog.title || t("chat.untitled")}
-                </ThemedText>
+                {titleDraft !== null ? (
+                  <TextInput
+                    value={titleDraft}
+                    onChangeText={setTitleDraft}
+                    onSubmitEditing={saveRenaming}
+                    onBlur={saveRenaming}
+                    autoFocus
+                    placeholder={t("chat.renamePlaceholder")}
+                    placeholderTextColor={theme.textSecondary}
+                    style={[
+                      styles.headerTitle,
+                      styles.headerTitleInput,
+                      {
+                        color: theme.text,
+                        borderColor: theme.backgroundSelected,
+                      },
+                    ]}
+                  />
+                ) : (
+                  <Pressable onPress={startRenaming} style={styles.headerTitle}>
+                    <ThemedText type="smallBold" numberOfLines={1}>
+                      {activeDialog.title || t("chat.untitled")}
+                    </ThemedText>
+                  </Pressable>
+                )}
               </View>
               <View style={styles.headerActions}>
                 <Pressable
@@ -541,30 +597,19 @@ export default function ChatScreen() {
             </ScrollView>
 
             <View style={styles.composerArea}>
-              <ModelChips
-                mode="live"
-                value={model}
-                onChange={setActiveModel}
-                visibleCount={6}
-              />
               <Pressable
-                onPress={() => setBrowseOpen((v) => !v)}
+                onPress={() => setModelPickerOpen(true)}
                 hitSlop={8}
-                style={styles.browseToggle}
+                style={styles.modelButton}
               >
-                <ThemedText type="code" themeColor="textSecondary">
-                  {browseOpen ? t("common.close") : t("models.title")}
+                <ThemedText
+                  type="code"
+                  themeColor="textSecondary"
+                  numberOfLines={1}
+                >
+                  {t("models.selected", { model })}
                 </ThemedText>
               </Pressable>
-              {browseOpen ? (
-                <ModelBrowser
-                  selectedId={model}
-                  onSelect={(id) => {
-                    setActiveModel(id);
-                    setBrowseOpen(false);
-                  }}
-                />
-              ) : null}
               <View style={styles.composer}>
                 <TextInput
                   value={input}
@@ -582,7 +627,7 @@ export default function ChatScreen() {
                     },
                   ]}
                 />
-                <Pressable
+                <AnimatedPressable
                   disabled={sending || input.trim().length === 0}
                   onPress={() => void handleSend()}
                   style={[
@@ -597,9 +642,16 @@ export default function ChatScreen() {
                       {t("chat.send")}
                     </ThemedText>
                   )}
-                </Pressable>
+                </AnimatedPressable>
               </View>
             </View>
+            <ModelPickerModal
+              visible={modelPickerOpen}
+              mode="live"
+              value={model}
+              onChange={setActiveModel}
+              onClose={() => setModelPickerOpen(false)}
+            />
           </>
         ) : (
           <>
@@ -762,6 +814,14 @@ const styles = StyleSheet.create({
   headerTitle: {
     flex: 1,
   },
+  headerTitleInput: {
+    fontSize: 15,
+    fontWeight: "700",
+    borderWidth: 1,
+    borderRadius: Spacing.one,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: 2,
+  },
   backButton: {
     paddingVertical: Spacing.one,
   },
@@ -827,7 +887,8 @@ const styles = StyleSheet.create({
     maxWidth: "85%",
   },
   userText: {
-    lineHeight: 20,
+    fontSize: 17,
+    lineHeight: 24,
   },
   assistantBubble: {
     borderRadius: Spacing.three,
@@ -853,7 +914,7 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.two,
     gap: Spacing.two,
   },
-  browseToggle: {
+  modelButton: {
     alignSelf: "flex-start",
     paddingVertical: 2,
   },
@@ -870,7 +931,7 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
-    fontSize: 15,
+    fontSize: 17,
     textAlignVertical: "top",
   },
   sendButton: {

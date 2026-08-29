@@ -17,6 +17,7 @@ const en = {
   "common.ok": "OK",
   "common.cancel": "Cancel",
   "common.close": "Close",
+  "common.save": "Save",
   "common.saved": "Saved",
   "common.canceled": "Canceled",
   "common.failed": "Error",
@@ -98,6 +99,9 @@ const en = {
   "batches.searchPlaceholder": "Search batches…",
   "batches.dialogLabel": "Batch",
   "batches.activeTag": "current",
+  "batches.rename": "Rename",
+  "batches.renamePrompt": "Batch name",
+  "batches.renamePlaceholder": "Name this batch…",
   "batches.deleteConfirm": "Delete this batch and its answers?",
   "batches.subtitle":
     "One line = one request. Send them as a batch and come back: the answers (and the math) will be collected right here.",
@@ -161,6 +165,11 @@ const en = {
   "chat.dialogs": "Chats",
   "chat.dialogLabel": "Chat",
   "chat.activeTag": "current",
+  "chat.rename": "Rename",
+  "chat.renamePrompt": "Dialog name",
+  "chat.renamePlaceholder": "Name this dialog…",
+  "chat.offlineTavily":
+    "No internet — opening tavily.com so you can search directly.",
 
   "models.searchPlaceholder": "Search by name or id…",
   "models.filter.all": "All",

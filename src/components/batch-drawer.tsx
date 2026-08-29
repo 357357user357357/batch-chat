@@ -20,6 +20,8 @@ export type BatchDialogSummary = {
   model: string;
   prompts: string[];
   createdAt: number;
+  /** Custom name set by the user; falls back to the first prompt when empty. */
+  title?: string;
   /** Flattened questions + answers, used for search. */
   searchText?: string;
 };
@@ -255,7 +257,8 @@ export function BatchDrawer({
                         numberOfLines={1}
                         style={styles.rowTitle}
                       >
-                        {labelFromPrompts(dialog.prompts) ||
+                        {dialog.title ||
+                          labelFromPrompts(dialog.prompts) ||
                           t("batches.untitled")}
                       </ThemedText>
                       <ThemedText

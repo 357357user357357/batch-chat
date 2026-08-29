@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-    ActivityIndicator,
-    Alert,
-    Pressable,
-    StyleSheet,
-    TextInput,
-    View,
-    type ViewStyle,
+  ActivityIndicator,
+  Alert,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+  type ViewStyle,
 } from "react-native";
 
 import { ThemedText } from "@/components/themed-text";
@@ -15,21 +15,21 @@ import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
 import {
-    clearStoredApiKey,
-    clearStoredTavilyApiKey,
-    getStoredApiKey,
-    getStoredTavilyApiKey,
-    isSecureStorageAvailable,
-    storeApiKey,
-    storeTavilyApiKey,
+  clearStoredApiKey,
+  clearStoredTavilyApiKey,
+  getStoredApiKey,
+  getStoredTavilyApiKey,
+  isSecureStorageAvailable,
+  storeApiKey,
+  storeTavilyApiKey,
 } from "@/services/key-store";
 import {
-    createBatch,
-    extractBatchAnswers,
-    getEnvApiKey,
-    waitForBatch,
-    type BatchOutcome,
-    type OpenRouterBatch,
+  createBatch,
+  extractBatchAnswers,
+  getEnvApiKey,
+  waitForBatch,
+  type BatchOutcome,
+  type OpenRouterBatch,
 } from "@/services/openrouter";
 import { searchWeb } from "@/services/tavily";
 
@@ -438,6 +438,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: Spacing.two,
     marginTop: Spacing.one,
+  },
+  sectionBreak: {
+    height: 1,
+    backgroundColor: "rgba(128,128,128,0.2)",
+    marginVertical: Spacing.one,
   },
   status: {
     marginTop: Spacing.one,

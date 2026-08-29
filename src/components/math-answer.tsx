@@ -1,11 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Pressable, StyleSheet, View } from "react-native";
 
-import { ThemedText } from '@/components/themed-text';
-import { MathArticle, type MathArticleHandle } from '@/components/math-article';
-import { containsMath } from '@/components/math-segments';
-import { Spacing } from '@/constants/theme';
-import { useI18n } from '@/i18n';
+import { MathArticle, type MathArticleHandle } from "@/components/math-article";
+import { containsMath } from "@/components/math-segments";
+import { ThemedText } from "@/components/themed-text";
+import { Spacing } from "@/constants/theme";
+import { useI18n } from "@/i18n";
 
 /**
  * Renders AI text that may contain LaTeX: plain paragraphs + MathJax formulas.
@@ -13,7 +13,13 @@ import { useI18n } from '@/i18n';
  * to copy just that part (formulas are copied as their LaTeX source), or open
  * the raw source view to copy the whole answer.
  */
-export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: number }) {
+export function MathAnswer({
+  text,
+  fontSize = 17,
+}: {
+  text: string;
+  fontSize?: number;
+}) {
   const { t } = useI18n();
   const [showSource, setShowSource] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -22,9 +28,12 @@ export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: n
   const articleRef = useRef<MathArticleHandle>(null);
   const hasMath = useMemo(() => containsMath(text), [text]);
 
-  useEffect(() => () => {
-    if (copiedTimer.current) clearTimeout(copiedTimer.current);
-  }, []);
+  useEffect(
+    () => () => {
+      if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    },
+    [],
+  );
 
   // Selection inside the rendered math view copies only the selected portion
   // (LaTeX formulas included) straight to the clipboard — no source view.
@@ -42,9 +51,13 @@ export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: n
         <ThemedText type="code" selectable style={styles.sourceText}>
           {text}
         </ThemedText>
-        <Pressable onPress={() => setShowSource(false)} hitSlop={6} style={styles.toggle}>
+        <Pressable
+          onPress={() => setShowSource(false)}
+          hitSlop={6}
+          style={styles.toggle}
+        >
           <ThemedText type="code" themeColor="textSecondary">
-            {t('math.rendered')}
+            {t("math.rendered")}
           </ThemedText>
         </Pressable>
       </View>
@@ -53,7 +66,11 @@ export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: n
 
   // No math → plain selectable text (no webview needed).
   if (!hasMath) {
-    return <ThemedText type="small" selectable>{text}</ThemedText>;
+    return (
+      <ThemedText type="small" selectable>
+        {text}
+      </ThemedText>
+    );
   }
 
   return (
@@ -70,22 +87,28 @@ export function MathAnswer({ text, fontSize = 15 }: { text: string; fontSize?: n
           onPressIn={() => articleRef.current?.requestCopy()}
           hitSlop={6}
           style={styles.copySelection}
-          accessibilityRole="button">
+          accessibilityRole="button"
+        >
           <ThemedText type="smallBold" style={styles.copySelectionText}>
-            ⧉ {t('chat.copySelection')}
+            ⧉ {t("chat.copySelection")}
           </ThemedText>
         </Pressable>
       ) : null}
       <View style={styles.footerRow}>
         <ThemedText
           type="small"
-          themeColor={copied ? 'text' : 'textSecondary'}
-          style={styles.copyHint}>
-          {copied ? `✓ ${t('chat.copied')}` : t('math.copyHint')}
+          themeColor={copied ? "text" : "textSecondary"}
+          style={styles.copyHint}
+        >
+          {copied ? `✓ ${t("chat.copied")}` : t("math.copyHint")}
         </ThemedText>
-        <Pressable onPress={() => setShowSource(true)} hitSlop={6} style={styles.toggle}>
+        <Pressable
+          onPress={() => setShowSource(true)}
+          hitSlop={6}
+          style={styles.toggle}
+        >
           <ThemedText type="code" themeColor="textSecondary">
-            {t('math.source')}
+            {t("math.source")}
           </ThemedText>
         </Pressable>
       </View>
@@ -101,27 +124,27 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   footerRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: 4,
   },
   copyHint: {
     flex: 1,
-    alignSelf: 'center',
+    alignSelf: "center",
   },
   copySelection: {
-    alignSelf: 'flex-end',
-    backgroundColor: '#3c87f7',
+    alignSelf: "flex-end",
+    backgroundColor: "#3c87f7",
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.two,
     paddingVertical: Spacing.half,
   },
   copySelectionText: {
-    color: '#ffffff',
+    color: "#ffffff",
   },
   toggle: {
-    alignSelf: 'center',
+    alignSelf: "center",
     marginTop: 2,
   },
 });

@@ -72,15 +72,15 @@ export async function searchWeb(
     );
   }
 
-  const payloawait response.json()) as {
+  const payload = (await response.json()) as {
     answer?: string;
-    results?: Array<{
+    results?: {
       title?: string;
       url?: string;
       content?: string;
-     []snippet?: string;
+      snippet?: string;
       score?: number;
-    }>;
+    }[];
   };
 
   const items = Array.isArray(payload.results) ? payload.results : [];
