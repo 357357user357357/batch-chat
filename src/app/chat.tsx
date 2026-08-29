@@ -18,6 +18,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { ChatDrawer } from "@/components/chat-drawer";
 import { MathAnswer } from "@/components/math-answer";
+import { autoDelimitRawLatex } from "@/components/math-segments";
 import { ModelPickerModal } from "@/components/model-picker-modal";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -542,7 +543,10 @@ export default function ChatScreen() {
                       type="backgroundSelected"
                       style={styles.userBubble}
                     >
-                      <MathAnswer text={message.content} fontSize={17} />
+                      <MathAnswer
+                        text={autoDelimitRawLatex(message.content)}
+                        fontSize={17}
+                      />
                     </ThemedView>
                   </View>
                 ) : (

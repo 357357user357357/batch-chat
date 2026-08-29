@@ -31,6 +31,37 @@ export function containsMath(text: string): boolean {
   return splitMathSegments(text).some((segment) => segment.kind === 'math');
 }
 
+// Recognized LaTeX macro names — a curated list keeps false positives near
+// zero (plain sentences essentially never contain a backslash + one of these).
+const LATEX_MACROS = [
+  'frac', 'sqrt', 'sum', 'int', 'prod', 'lim', 'infty', 'partial', 'nabla',
+  'cdot', 'times', 'pm', 'mp', 'leq', 'geq', 'neq', 'approx', 'equiv', 'sim',
+  'propto', 'subset', 'subseteq', 'cup', 'cap', 'forall', 'exists',
+  'emptyset', 'rightarrow', 'leftarrow', 'Rightarrow', 'Leftrightarrow', 'to',
+  'alpha', 'beta', 'gamma', 'delta', 'epsilon', 'theta', 'lambda', 'mu',
+  'sigma', 'phi', 'omega', 'pi', 'sin', 'cos', 'tan', 'log', 'ln', 'exp',
+  'left', 'right', 'text', 'mathbb', 'mathrm', 'hat', 'bar', 'vec',
+  'overline', 'underline', 'binom', 'cdots', 'ldots', 'vdots', 'ddots',
+];
+
+const RAW_LATEX_PATTERN = new RegExp(
+  `\\\\(?:${LATEX_MACROS.join('|')})(?:\\{[^{}]*\\})*(?:[_^](?:\\{[^{}]*\\}|[^\\s{}]))*`,
+  'g',
+);
+
+/**
+ * Wraps bare LaTeX macros (`\frac{1}{2}`, `\sqrt{x}`, …) in `$…$` when the
+ * user typed them without delimiters, so questions render the same way
+ * answers do. Text that already uses `$…$`/`$$…$$`/`\(…\)`/`\[…\]` is left
+ * untouched.
+ */
+export function autoDelimitRawLatex(text: string): string {
+  if (containsMath(text)) return text;
+  if (!RAW_LATEX_PATTERN.test(text)) return text;
+  RAW_LATEX_PATTERN.lastIndex = 0;
+  return text.replace(RAW_LATEX_PATTERN, (match) => `$${match}$`);
+}
+
 /** True when a math segment renders as a display block (`$$…$$` / `\[…\]`). */
 export function isDisplayMath(segment: MathSegment): boolean {
   return segment.value.startsWith('$$') || segment.value.startsWith('\\[');
