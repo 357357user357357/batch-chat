@@ -31,99 +31,173 @@ export function containsMath(text: string): boolean {
   return splitMathSegments(text).some((segment) => segment.kind === "math");
 }
 
-// Recognized LaTeX macro names — a curated list keeps false positives near
-// zero (plain sentences essentially never contain a backslash + one of these).
-const LATEX_MACROS = [
-  "frac",
+// Bare LaTeX commands — symbols/operators that render on their own without an
+// argument, so things like `\infty`, `\pi`, `\hat`, … are wrapped even when the
+// user omits `{…}`/`_`/`^`. Keeping a curated set means false positives (e.g. a
+// Windows path like `C:\Users`) don't get turned into math. Commands that DO
+// carry an argument or a sub/superscript are recognized regardless of this list.
+const BARE_SYMBOLS = [
+  "frac", "dfrac", "tfrac", "cfrac",
   "sqrt",
-  "sum",
-  "int",
-  "prod",
-  "lim",
-  "infty",
-  "partial",
-  "nabla",
-  "cdot",
-  "times",
-  "pm",
-  "mp",
-  "leq",
-  "geq",
-  "neq",
-  "approx",
-  "equiv",
-  "sim",
-  "propto",
-  "subset",
-  "subseteq",
-  "cup",
-  "cap",
-  "forall",
-  "exists",
-  "emptyset",
-  "rightarrow",
-  "leftarrow",
-  "Rightarrow",
-  "Leftrightarrow",
-  "to",
-  "alpha",
-  "beta",
-  "gamma",
-  "delta",
-  "epsilon",
-  "theta",
-  "lambda",
-  "mu",
-  "sigma",
-  "phi",
-  "omega",
-  "pi",
-  "sin",
-  "cos",
-  "tan",
-  "log",
-  "ln",
-  "exp",
-  "left",
-  "right",
-  "text",
-  "mathbb",
-  "mathrm",
-  "hat",
-  "bar",
-  "vec",
-  "overline",
-  "underline",
-  "binom",
-  "cdots",
-  "ldots",
-  "vdots",
-  "ddots",
+  "sum", "int", "prod", "lim", "inf", "sup", "max", "min",
+  "infty", "partial", "nabla", "ell", "hbar", "Re", "Im",
+  "cdot", "times", "pm", "mp", "div",
+  "leq", "geq", "neq", "approx", "equiv", "sim", "propto",
+  "subset", "subseteq", "supset", "supseteq", "cup", "cap",
+  "forall", "exists", "nexists", "emptyset", "varnothing",
+  "rightarrow", "leftarrow", "Rightarrow", "Leftarrow",
+  "Leftrightarrow", "to", "mapsto", "implies", "iff",
+  "alpha", "beta", "gamma", "delta", "epsilon", "varepsilon",
+  "zeta", "eta", "theta", "vartheta", "iota", "kappa", "lambda",
+  "mu", "nu", "xi", "rho", "varrho", "sigma", "tau", "upsilon",
+  "phi", "varphi", "chi", "psi", "omega",
+  "Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma",
+  "Upsilon", "Phi", "Psi", "Omega",
+  "sin", "cos", "tan", "cot", "sec", "csc",
+  "log", "ln", "exp", "det", "gcd", "arg", "dim", "ker", "hom",
+  "left", "right",
+  "text", "mathbb", "mathrm", "mathbf", "mathit", "mathcal",
+  "mathfrak", "mathsf", "mathtt", "operatorname",
+  "displaystyle", "textstyle", "scriptstyle",
+  "hat", "bar", "vec", "dot", "ddot", "tilde",
+  "overline", "underline", "widehat", "widetilde",
+  "binom", "cdots", "ldots", "vdots", "ddots", "dots", "dotsc",
+  "quad", "qquad", "angle", "degree", "prime", "circ",
 ];
 
-const RAW_LATEX_MACRO = `\\\\(?:${LATEX_MACROS.join("|")})(?:\\{[^{}]*\\})*(?:[_^](?:\\{[^{}]*\\}|[^\\s{}]))*`;
-// Bare exponents typed without a macro, e.g. `x^2`, `(a+b)^2`, `e^{-x}`.
-// Restricted to `^` only (not `_`) since underscores are common in plain
-// text (snake_case, usernames) while `^` is an unambiguous math signal.
-const EXPONENT_BASE = "(?:\\([^()]*\\)|[A-Za-z0-9\\]])";
-const RAW_BARE_EXPONENT = `${EXPONENT_BASE}\\^(?:\\{[^{}]+\\}|-?[A-Za-z0-9]+)`;
+const BARE_SYMBOL_SET = new Set(BARE_SYMBOLS);
 
-const RAW_LATEX_PATTERN = new RegExp(
-  `${RAW_LATEX_MACRO}|${RAW_BARE_EXPONENT}`,
+/**
+ * A single LaTeX command: `\` + letters (+ optional `*`), any brace arguments
+ * (nesting is supported one level deep so `\frac{\frac{1}{2}}{3}` works), and
+ * any `_`/`^` sub/superscripts. A subscript/superscript may be a brace group,
+ * another command (`^\infty`) or a single token (`_0`, `^2`) — previously
+ * `\int_0^\infty` was split because `^\infty` unmatched the trailing `\infty`.
+ */
+const MACRO_PATTERN =
+  /\\[a-zA-Z]+\*?(?:\{(?:[^{}]|\{[^{}]*\})*\})*(?:[_^](?:\{(?:[^{}]|\{[^{}]*\})*\}|\\[a-zA-Z]+|[^\s{}]))*/;
+
+/** Bare exponents typed without a command: `x^2`, `(a+b)^2`, `e^{-x}`, `e^\infty`. */
+const BARE_EXPONENT_PATTERN =
+  /(?:[A-Za-z0-9\]]|\([^()]*\))\^(?:\{[^{}]+\}|\\[a-zA-Z]+|-?[A-Za-z0-9]+)/;
+
+/** A whole `\begin{…} … \end{…}` block, rendered as display math. */
+const ENVIRONMENT_PATTERN = /\\begin\{[^{}]*\}[\s\S]*?\\end\{[^{}]*\}/g;
+
+/**
+ * Combined matcher for a non-environment math fragment: a LaTeX command or a
+ * bare exponent. `matchAll` consumes matches left-to-right, so a bare exponent
+ * like `e^\infty` wins as a single atom instead of being split into `e^` + the
+ * `\infty` symbol.
+ */
+const FRAGMENT_PATTERN = new RegExp(
+  `${MACRO_PATTERN.source}|${BARE_EXPONENT_PATTERN.source}`,
   "g",
 );
 
+type MathAtom = { start: number; end: number; display: boolean };
+
+function commandName(source: string): string {
+  const match = /^\\([a-zA-Z]+)/.exec(source);
+  return match ? match[1] : "";
+}
+
+/** Characters that may sit between two adjacent math atoms and still merge. */
+function isConnector(gap: string): boolean {
+  return /^[\s+\-*/=<>()[\]{},.:;^_|]*$/.test(gap);
+}
+
+function findMathAtoms(text: string): MathAtom[] {
+  const atoms: MathAtom[] = [];
+
+  // Whole \begin{…}…\end{…} blocks first — they render as one display formula
+  // and their inner commands must not be matched separately.
+  for (const match of text.matchAll(ENVIRONMENT_PATTERN)) {
+    atoms.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      display: true,
+    });
+  }
+
+  for (const match of text.matchAll(FRAGMENT_PATTERN)) {
+    if (atoms.some((atom) => match.index >= atom.start && match.index < atom.end)) {
+      continue;
+    }
+    const value = match[0];
+    // A command without braces or sub/superscript is only kept when its name is
+    // a known symbol, so stray backslashes in prose aren't misread as math.
+    if (value[0] === "\\") {
+      const bare = !/[{}_^]/.test(value);
+      if (bare && !BARE_SYMBOL_SET.has(commandName(value))) continue;
+    }
+    atoms.push({
+      start: match.index,
+      end: match.index + value.length,
+      display: false,
+    });
+  }
+
+  return atoms.sort((a, b) => a.start - b.start);
+}
+
+function mergeAtoms(atoms: MathAtom[], text: string): MathAtom[] {
+  const runs: MathAtom[] = [];
+  for (const atom of atoms) {
+    const last = runs[runs.length - 1];
+    if (
+      last &&
+      !last.display &&
+      !atom.display &&
+      isConnector(text.slice(last.end, atom.start))
+    ) {
+      last.end = atom.end;
+    } else {
+      runs.push({ ...atom });
+    }
+  }
+  return runs;
+}
+
+function rebuild(text: string, runs: MathAtom[]): string {
+  let out = "";
+  let lastIndex = 0;
+  for (const run of runs) {
+    out += text.slice(lastIndex, run.start);
+    const content = text.slice(run.start, run.end);
+    out += run.display ? `$$${content}$$` : `$${content}$`;
+    lastIndex = run.end;
+  }
+  return out + text.slice(lastIndex);
+}
+
 /**
- * Wraps bare LaTeX (`\frac{1}{2}`, `\sqrt{x}`, `x^2`, …) in `$…$` when the
- * user typed it without delimiters, so questions render the same way
- * answers do. Text that already uses `$…$`/`$$…$$`/`\(…\)`/`\[…\]` is left
- * untouched.
+ * "Corrects" a raw question by wrapping any bare LaTeX in `$…$` (`$$…$$` for
+ * `\begin…\end` blocks) so it renders with MathJax exactly like the answer
+ * does. It runs while the model is still thinking and again whenever a saved
+ * dialog is re-opened, because the stored text is corrected on the fly instead
+ * of being rewritten in storage.
+ *
+ * Already-delimited math (`$…$`, `$$…$$`, `\(…\)`, `\[…\]`) is left untouched,
+ * but bare math *outside* those delimiters is still wrapped, so mixed input
+ * (`Compute $\int x\,dx$ plus \frac{1}{2}`) renders both parts correctly.
  */
 export function autoDelimitRawLatex(text: string): string {
-  if (containsMath(text)) return text;
-  if (!RAW_LATEX_PATTERN.test(text)) return text;
-  RAW_LATEX_PATTERN.lastIndex = 0;
-  return text.replace(RAW_LATEX_PATTERN, (match) => `$${match}$`);
+  const protectedRanges: { start: number; end: number }[] = [];
+  for (const match of text.matchAll(MATH_PATTERN)) {
+    protectedRanges.push({
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+
+  const atoms = findMathAtoms(text).filter(
+    (atom) =>
+      !protectedRanges.some((range) => atom.start >= range.start && atom.start < range.end),
+  );
+  if (atoms.length === 0) return text;
+
+  return rebuild(text, mergeAtoms(atoms, text));
 }
 
 /** True when a math segment renders as a display block (`$$…$$` / `\[…\]`). */
