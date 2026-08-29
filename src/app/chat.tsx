@@ -441,7 +441,7 @@ export default function ChatScreen() {
   return (
     <KeyboardAvoidingView
       style={[styles.flex, { backgroundColor: theme.background }]}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <View style={styles.inner}>
         {activeDialog ? (
@@ -522,6 +522,8 @@ export default function ChatScreen() {
                 scrollRef.current?.scrollToEnd({ animated: true })
               }
               keyboardShouldPersistTaps="handled"
+              bounces={false}
+              overScrollMode="never"
             >
               {messages.length === 0 && !sending ? (
                 <ThemedText
@@ -540,13 +542,7 @@ export default function ChatScreen() {
                       type="backgroundSelected"
                       style={styles.userBubble}
                     >
-                      <ThemedText
-                        type="small"
-                        style={styles.userText}
-                        selectable
-                      >
-                        {message.content}
-                      </ThemedText>
+                      <MathAnswer text={message.content} fontSize={17} />
                     </ThemedView>
                   </View>
                 ) : (
@@ -701,6 +697,8 @@ export default function ChatScreen() {
               style={styles.flex}
               contentContainerStyle={styles.listContent}
               keyboardShouldPersistTaps="handled"
+              bounces={false}
+              overScrollMode="never"
             >
               {filteredDialogs.length === 0 ? (
                 <ThemedText
@@ -885,10 +883,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
     maxWidth: "85%",
-  },
-  userText: {
-    fontSize: 17,
-    lineHeight: 24,
   },
   assistantBubble: {
     borderRadius: Spacing.three,

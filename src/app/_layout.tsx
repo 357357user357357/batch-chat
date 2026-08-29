@@ -1,18 +1,25 @@
-import { DarkTheme, DefaultTheme, ThemeProvider, router, usePathname } from 'expo-router';
-import * as SplashScreen from 'expo-splash-screen';
-import { useEffect, useState } from 'react';
-import { useColorScheme } from 'react-native';
+import {
+    DarkTheme,
+    DefaultTheme,
+    ThemeProvider,
+    router,
+    usePathname,
+    type Href,
+} from "expo-router";
+import * as SplashScreen from "expo-splash-screen";
+import { useEffect, useState } from "react";
+import { useColorScheme } from "react-native";
 
-import { AnimatedSplashOverlay } from '@/components/animated-icon';
-import AppTabs from '@/components/app-tabs';
-import { I18nProvider } from '@/i18n';
-import { loadString, saveString } from '@/services/storage';
+import { AnimatedSplashOverlay } from "@/components/animated-icon";
+import AppTabs from "@/components/app-tabs";
+import { I18nProvider } from "@/i18n";
+import { loadString, saveString } from "@/services/storage";
 
 SplashScreen.preventAutoHideAsync();
 
-const LAST_TAB_STORAGE_KEY = 'app.lastTab.v1';
+const LAST_TAB_STORAGE_KEY = "app.lastTab.v1";
 /** Tab routes the app knows about; used to keep restore safe. */
-const KNOWN_TABS = new Set(['/', '/index', '/chat', '/batches']);
+const KNOWN_TABS = new Set(["/", "/index", "/chat", "/batches"]);
 
 export default function TabLayout() {
   const colorScheme = useColorScheme();
@@ -25,8 +32,8 @@ export default function TabLayout() {
     let cancelled = false;
     void loadString(LAST_TAB_STORAGE_KEY).then((tab) => {
       if (cancelled) return;
-      if (tab && tab !== '/' && tab !== '/index' && KNOWN_TABS.has(tab)) {
-        router.replace(tab);
+      if (tab && tab !== "/" && tab !== "/index" && KNOWN_TABS.has(tab)) {
+        router.replace(tab as Href);
       }
       setTabHydrated(true);
     });
@@ -43,7 +50,7 @@ export default function TabLayout() {
 
   return (
     <I18nProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <ThemeProvider value={colorScheme === "dark" ? DarkTheme : DefaultTheme}>
         <AnimatedSplashOverlay />
         <AppTabs />
       </ThemeProvider>

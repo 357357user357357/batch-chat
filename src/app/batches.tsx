@@ -472,10 +472,9 @@ export default function BatchesScreen() {
         <ScrollView
           style={styles.flex}
           contentInset={insets}
-          contentContainerStyle={[
-            styles.contentContainer,
-            { paddingBottom: insets.bottom },
-          ]}
+          contentContainerStyle={styles.contentContainer}
+          bounces={false}
+          overScrollMode="never"
         >
           <ThemedView style={styles.container}>
             <BatchCard
@@ -529,10 +528,9 @@ export default function BatchesScreen() {
       <ScrollView
         style={styles.flex}
         contentInset={insets}
-        contentContainerStyle={[
-          styles.contentContainer,
-          { paddingBottom: insets.bottom },
-        ]}
+        contentContainerStyle={styles.contentContainer}
+        bounces={false}
+        overScrollMode="never"
       >
         <ThemedView style={styles.container}>
           <ThemedText themeColor="textSecondary" type="small">
