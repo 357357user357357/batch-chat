@@ -1,16 +1,18 @@
 import * as Clipboard from "expo-clipboard";
 import {
-    forwardRef,
-    useImperativeHandle,
-    useMemo,
-    useRef,
-    useState,
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
 } from "react";
 import { StyleSheet, View, type ViewStyle } from "react-native";
 import { WebView } from "react-native-webview";
 
 import { isDisplayMath, splitMathSegments } from "@/components/math-segments";
 import { useTheme } from "@/hooks/use-theme";
+import { getMathJaxSource } from "@/services/mathjax-source";
 
 export type MathArticleHandle = {
   /** Re-extract the current selection (with LaTeX) and copy it. */
@@ -46,7 +48,12 @@ function escapeHtml(value: string): string {
     .replace(/"/g, "&quot;");
 }
 
-function buildHtml(text: string, fontSize: number, color: string): string {
+function buildHtml(
+  text: string,
+  fontSize: number,
+  color: string,
+  mathJaxSource: string,
+): string {
   // Render each part separately: plain text stays a normal span, math gets a
   // span tagged with its raw LaTeX source (`data-tex`, delimiters included) so
   // selections can be re-assembled with formulas preserved as their source.
@@ -134,7 +141,7 @@ function buildHtml(text: string, fontSize: number, color: string): string {
     "        }",
     "      });",
     "    </script>",
-    '    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>',
+    '    <script id="MathJax-script">' + mathJaxSource + "</script>",
     "    <script>",
     "      (function () {",
     "        // ---- Selection-aware copy (LaTeX preserved). The host renders a",
@@ -229,8 +236,8 @@ function buildHtml(text: string, fontSize: number, color: string): string {
  * math (`$$…$$`, `\[…\]`) gets its own block line.
  *
  * The host is auto-sized: MathJax reports its real rendered height through
- * `postMessage` and the WebView grows to fit. The MathJax library is loaded
- * from a CDN, so the device needs network access.
+ * `postMessage` and the WebView grows to fit. MathJax is bundled locally (see
+ * mathjax-source.ts), so this works fully offline.
  *
  * Text is selectable: when a portion is selected the host shows a "Copy"
  * chip, and copying extracts only the selected portion with any LaTeX
@@ -246,14 +253,28 @@ export const MathArticle = forwardRef<MathArticleHandle, MathArticleProps>(
     // in both light and dark mode (a hardcoded dark color becomes invisible on
     // the dark background).
     const resolvedColor = color ?? theme.text;
+    const [mathJaxSource, setMathJaxSource] = useState<string | null>(null);
     const html = useMemo(
-      () => buildHtml(text, fontSize, resolvedColor),
-      [text, fontSize, resolvedColor],
+      () =>
+        mathJaxSource
+          ? buildHtml(text, fontSize, resolvedColor, mathJaxSource)
+          : null,
+      [text, fontSize, resolvedColor, mathJaxSource],
     );
     const [boxHeight, setBoxHeight] = useState<number>(
       Math.max(80, Math.round(fontSize * 6)),
     );
     const webviewRef = useRef<WebView>(null);
+
+    useEffect(() => {
+      let cancelled = false;
+      void getMathJaxSource().then((source) => {
+        if (!cancelled) setMathJaxSource(source);
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, []);
 
     useImperativeHandle(
       ref,
@@ -293,15 +314,17 @@ export const MathArticle = forwardRef<MathArticleHandle, MathArticleProps>(
 
     return (
       <View style={[styles.container, { height: boxHeight }, style]}>
-        <WebView
-          ref={webviewRef}
-          style={styles.webview}
-          originWhitelist={["*"]}
-          source={{ html }}
-          javaScriptEnabled
-          domStorageEnabled
-          onMessage={handleMessage}
-        />
+        {html ? (
+          <WebView
+            ref={webviewRef}
+            style={styles.webview}
+            originWhitelist={["*"]}
+            source={{ html }}
+            javaScriptEnabled
+            domStorageEnabled
+            onMessage={handleMessage}
+          />
+        ) : null}
       </View>
     );
   },

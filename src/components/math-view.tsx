@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react';
-import { StyleSheet, View, type ViewStyle } from 'react-native';
-import { WebView } from 'react-native-webview';
+import { useEffect, useMemo, useState } from "react";
+import { StyleSheet, View, type ViewStyle } from "react-native";
+import { WebView } from "react-native-webview";
 
-import { useTheme } from '@/hooks/use-theme';
+import { useTheme } from "@/hooks/use-theme";
+import { getMathJaxSource } from "@/services/mathjax-source";
 
 export type MathViewProps = {
   /** LaTeX (TeX) expression, e.g. `x = \frac{-b \pm \sqrt{b^2-4ac}}{2a}` */
@@ -16,83 +17,90 @@ export type MathViewProps = {
 
 function escapeHtml(value: string): string {
   return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
-function buildHtml(tex: string, fontSize: number, color: string): string {
+function buildHtml(
+  tex: string,
+  fontSize: number,
+  color: string,
+  mathJaxSource: string,
+): string {
   const body = escapeHtml(tex);
   return [
-    '<!doctype html>',
-    '<html>',
-    '  <head>',
+    "<!doctype html>",
+    "<html>",
+    "  <head>",
     '    <meta charset="utf-8" />',
     '    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />',
-    '    <style>',
-    '      html, body { margin: 0; padding: 0; background: transparent; }',
-    '      body { box-sizing: border-box; padding: 2px 6px 10px; overflow: hidden; }',
-    '      #math { font-size: ' + fontSize + 'px; line-height: 1.7; text-align: center; }',
-    '      /* MathJax SVG glues formulas to the text baseline with',
-    '         vertical-align offsets; a fixed-height host then clips tall',
-    '         formulas (fractions, sqrt, sums). Block display + visible',
-    '         overflow keeps every pixel inside the box. */',
-    '      mjx-container {',
-    '        color: ' + color + ' !important;',
-    '        display: block;',
-    '        text-align: center;',
-    '        overflow: visible;',
-    '        margin: 3px auto;',
-    '      }',
-    '    </style>',
-    '    <script>',
-    '      window.MathJax = {',
-    '        tex: {',
+    "    <style>",
+    "      html, body { margin: 0; padding: 0; background: transparent; }",
+    "      body { box-sizing: border-box; padding: 2px 6px 10px; overflow: hidden; }",
+    "      #math { font-size: " +
+      fontSize +
+      "px; line-height: 1.7; text-align: center; }",
+    "      /* MathJax SVG glues formulas to the text baseline with",
+    "         vertical-align offsets; a fixed-height host then clips tall",
+    "         formulas (fractions, sqrt, sums). Block display + visible",
+    "         overflow keeps every pixel inside the box. */",
+    "      mjx-container {",
+    "        color: " + color + " !important;",
+    "        display: block;",
+    "        text-align: center;",
+    "        overflow: visible;",
+    "        margin: 3px auto;",
+    "      }",
+    "    </style>",
+    "    <script>",
+    "      window.MathJax = {",
+    "        tex: {",
     "          inlineMath: [['$', '$'], ['\\\\\\\\(', '\\\\\\\\)']],",
     "          displayMath: [['$$', '$$'], ['\\\\\\\\[', '\\\\\\\\]']]",
-    '        },',
-    '        startup: {',
-    '          ready() {',
-    '            MathJax.startup.defaultReady();',
-    '            MathJax.startup.promise',
-    '              .then(function () {',
-    '                setTimeout(function () { postHeight(); }, 150);',
-    '              })',
-    '              .catch(function (error) {',
-    '                if (window.ReactNativeWebView) {',
+    "        },",
+    "        startup: {",
+    "          ready() {",
+    "            MathJax.startup.defaultReady();",
+    "            MathJax.startup.promise",
+    "              .then(function () {",
+    "                setTimeout(function () { postHeight(); }, 150);",
+    "              })",
+    "              .catch(function (error) {",
+    "                if (window.ReactNativeWebView) {",
     "                  window.ReactNativeWebView.postMessage(",
     "                    'mathjax:error:' + (error && error.message)",
-    '                  );',
-    '                }',
-    '              });',
-    '          }',
-    '        }',
-    '      };',
-    '      function postHeight() {',
+    "                  );",
+    "                }",
+    "              });",
+    "          }",
+    "        }",
+    "      };",
+    "      function postHeight() {",
     "        var math = document.getElementById('math');",
-    '        if (!math) return;',
-    '        var height = Math.ceil(math.getBoundingClientRect().height) + 14;',
-    '        if (window.ReactNativeWebView) {',
-    '          if (window.__lastMathHeight === height) return;',
-    '          window.__lastMathHeight = height;',
+    "        if (!math) return;",
+    "        var height = Math.ceil(math.getBoundingClientRect().height) + 14;",
+    "        if (window.ReactNativeWebView) {",
+    "          if (window.__lastMathHeight === height) return;",
+    "          window.__lastMathHeight = height;",
     "          window.ReactNativeWebView.postMessage('mathjax:ready:' + height);",
-    '        }',
-    '      }',
+    "        }",
+    "      }",
     "      document.addEventListener('DOMContentLoaded', function () {",
     "        var math = document.getElementById('math');",
-    '        if (math) {',
-    '          var observer = new MutationObserver(function () { postHeight(); });',
-    '          observer.observe(math, { subtree: true, childList: true, attributes: true });',
-    '        }',
-    '      });',
-    '    </script>',
-    '    <script id="MathJax-script" async src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js"></script>',
-    '  </head>',
-    '  <body>',
-    '    <div id="math">$$' + body + '$$</div>',
-    '  </body>',
-    '</html>',
-  ].join('\n');
+    "        if (math) {",
+    "          var observer = new MutationObserver(function () { postHeight(); });",
+    "          observer.observe(math, { subtree: true, childList: true, attributes: true });",
+    "        }",
+    "      });",
+    "    </script>",
+    '    <script id="MathJax-script">' + mathJaxSource + "</script>",
+    "  </head>",
+    "  <body>",
+    '    <div id="math">$$' + body + "$$</div>",
+    "  </body>",
+    "</html>",
+  ].join("\n");
 }
 
 /**
@@ -101,51 +109,78 @@ function buildHtml(tex: string, fontSize: number, color: string): string {
  * The host is auto-sized: MathJax reports its real rendered height through
  * `postMessage` and the WebView grows to fit. This fixes the "only the top
  * half of the formula" clipping that happens when the host has a fixed height
- * smaller than tall formulas (fractions, \sqrt, \sum, …). The MathJax library
- * is loaded from a CDN, so the device needs network access.
+ * smaller than tall formulas (fractions, \sqrt, \sum, …). MathJax is bundled
+ * locally (see mathjax-source.ts), so this works fully offline.
  */
-export function MathView({ tex, style, fontSize = 18, color, onReady }: MathViewProps) {
+export function MathView({
+  tex,
+  style,
+  fontSize = 18,
+  color,
+  onReady,
+}: MathViewProps) {
   const theme = useTheme();
   // Default to the active app theme's text color so the formula stays visible
   // in both light and dark mode (a hardcoded dark color becomes invisible on
   // the dark background).
   const resolvedColor = color ?? theme.text;
-  const html = useMemo(() => buildHtml(tex, fontSize, resolvedColor), [tex, fontSize, resolvedColor]);
-  const [boxHeight, setBoxHeight] = useState<number>(Math.max(56, Math.round(fontSize * 3.6)));
+  const [mathJaxSource, setMathJaxSource] = useState<string | null>(null);
+  const html = useMemo(
+    () =>
+      mathJaxSource
+        ? buildHtml(tex, fontSize, resolvedColor, mathJaxSource)
+        : null,
+    [tex, fontSize, resolvedColor, mathJaxSource],
+  );
+  const [boxHeight, setBoxHeight] = useState<number>(
+    Math.max(56, Math.round(fontSize * 3.6)),
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    void getMathJaxSource().then((source) => {
+      if (!cancelled) setMathJaxSource(source);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleMessage = (event: { nativeEvent: { data: string } }) => {
     const message = event.nativeEvent.data;
-    if (message.startsWith('mathjax:ready:')) {
-      const parsed = Number(message.slice('mathjax:ready:'.length));
+    if (message.startsWith("mathjax:ready:")) {
+      const parsed = Number(message.slice("mathjax:ready:".length));
       if (Number.isFinite(parsed) && parsed > 0) {
         setBoxHeight((current) => Math.max(current, Math.round(parsed)));
       }
       onReady?.();
-    } else if (message.startsWith('mathjax:error')) {
-      console.warn('[math-view]', message);
+    } else if (message.startsWith("mathjax:error")) {
+      console.warn("[math-view]", message);
     }
   };
 
   return (
     <View style={[styles.container, { height: boxHeight }, style]}>
-      <WebView
-        style={styles.webview}
-        originWhitelist={['*']}
-        source={{ html }}
-        javaScriptEnabled
-        domStorageEnabled
-        onMessage={handleMessage}
-      />
+      {html ? (
+        <WebView
+          style={styles.webview}
+          originWhitelist={["*"]}
+          source={{ html }}
+          javaScriptEnabled
+          domStorageEnabled
+          onMessage={handleMessage}
+        />
+      ) : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    alignSelf: 'stretch',
+    alignSelf: "stretch",
   },
   webview: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: "transparent",
   },
 });
