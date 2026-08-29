@@ -1,19 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 import {
-  Animated,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+    Animated,
+    Modal,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    useWindowDimensions,
+    View,
+} from "react-native";
 
-import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
-import { useI18n } from '@/i18n';
-import { useTheme } from '@/hooks/use-theme';
+import { ThemedText } from "@/components/themed-text";
+import { Spacing } from "@/constants/theme";
+import { useTheme } from "@/hooks/use-theme";
+import { useI18n } from "@/i18n";
 
 export type BatchDialogSummary = {
   id: string;
@@ -36,15 +36,24 @@ export type BatchDrawerProps = {
 
 function formatTime(timestamp: number): string {
   const date = new Date(timestamp);
-  const day = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const day = date.toLocaleDateString([], { month: "short", day: "numeric" });
+  const time = date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   return `${day} ${time}`;
 }
 
 /** Short, single-line label for a batch: its first (main) question. */
 function labelFromPrompts(prompts: string[]): string {
-  const first = (prompts.find((p) => p.trim()) ?? '').replace(/\s+/g, ' ').trim();
+  const first = (prompts.find((p) => p.trim()) ?? "")
+    .replace(/\s+/g, " ")
+    .trim();
   return first.length > 42 ? `${first.slice(0, 42)}…` : first;
+}
+
+function dialogBadge(index: number, prefix: string): string {
+  return `${prefix} ${String(index + 1).padStart(2, "0")}`;
 }
 
 /**
@@ -67,7 +76,7 @@ export function BatchDrawer({
   const width = Math.floor(windowWidth * (2 / 3));
 
   const [mounted, setMounted] = useState(visible);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -92,7 +101,7 @@ export function BatchDrawer({
 
   // Clear the search whenever the drawer is closed.
   useEffect(() => {
-    if (!visible) setSearch('');
+    if (!visible) setSearch("");
   }, [visible]);
 
   if (!mounted) return null;
@@ -107,7 +116,9 @@ export function BatchDrawer({
   const query = search.trim().toLowerCase();
   const filtered = query
     ? sorted.filter((dialog) =>
-        (dialog.searchText ?? dialog.prompts.join(' ')).toLowerCase().includes(query)
+        (dialog.searchText ?? dialog.prompts.join(" "))
+          .toLowerCase()
+          .includes(query),
       )
     : sorted;
 
@@ -117,13 +128,14 @@ export function BatchDrawer({
       transparent
       animationType="none"
       statusBarTranslucent
-      onRequestClose={onClose}>
+      onRequestClose={onClose}
+    >
       <View style={styles.overlay}>
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: progress }]}>
           <Pressable
             onPress={onClose}
-            accessibilityLabel={t('common.close')}
-            style={[styles.backdrop, { backgroundColor: 'rgba(0,0,0,0.5)' }]}
+            accessibilityLabel={t("common.close")}
+            style={[styles.backdrop, { backgroundColor: "rgba(0,0,0,0.5)" }]}
           />
         </Animated.View>
 
@@ -134,21 +146,35 @@ export function BatchDrawer({
               width,
               backgroundColor: theme.background,
               borderColor: theme.backgroundSelected,
-              shadowColor: '#000000',
+              shadowColor: "#000000",
               transform: [{ translateX }],
             },
-          ]}>
-          <View style={[styles.header, { borderBottomColor: theme.backgroundSelected }]}>
-            <ThemedText type="subtitle" numberOfLines={1} style={styles.headerTitle}>
-              {t('batches.title')}
+          ]}
+        >
+          <View
+            style={[
+              styles.header,
+              { borderBottomColor: theme.backgroundSelected },
+            ]}
+          >
+            <ThemedText
+              type="subtitle"
+              numberOfLines={1}
+              style={styles.headerTitle}
+            >
+              {t("batches.title")}
             </ThemedText>
             <View style={styles.headerActions}>
               <Pressable onPress={onNew} hitSlop={8} style={styles.newButton}>
                 <ThemedText type="smallBold" style={styles.newText}>
-                  + {t('batches.newBatch')}
+                  + {t("batches.newBatch")}
                 </ThemedText>
               </Pressable>
-              <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton}>
+              <Pressable
+                onPress={onClose}
+                hitSlop={8}
+                style={styles.closeButton}
+              >
                 <ThemedText type="subtitle" style={styles.closeText}>
                   ×
                 </ThemedText>
@@ -159,7 +185,7 @@ export function BatchDrawer({
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder={t('batches.searchPlaceholder')}
+              placeholder={t("batches.searchPlaceholder")}
               placeholderTextColor={theme.textSecondary}
               autoCorrect={false}
               style={[
@@ -175,13 +201,18 @@ export function BatchDrawer({
           <ScrollView
             style={styles.flex}
             contentContainerStyle={styles.listContent}
-            keyboardShouldPersistTaps="handled">
+            keyboardShouldPersistTaps="handled"
+          >
             {filtered.length === 0 ? (
-              <ThemedText themeColor="textSecondary" type="small" style={styles.emptyHint}>
-                {query ? t('common.noMatch') : t('batches.historyEmpty')}
+              <ThemedText
+                themeColor="textSecondary"
+                type="small"
+                style={styles.emptyHint}
+              >
+                {query ? t("common.noMatch") : t("batches.historyEmpty")}
               </ThemedText>
             ) : (
-              filtered.map((dialog) => {
+              filtered.map((dialog, index) => {
                 const active = dialog.id === activeId;
                 return (
                   <View
@@ -192,38 +223,61 @@ export function BatchDrawer({
                         backgroundColor: active
                           ? theme.backgroundSelected
                           : theme.backgroundElement,
-                        borderColor: active ? '#3c87f7' : theme.backgroundSelected,
+                        borderColor: active
+                          ? "#3c87f7"
+                          : theme.backgroundSelected,
                       },
-                    ]}>
+                    ]}
+                  >
                     <Pressable
                       onPress={() => onSelect(dialog.id)}
                       style={styles.rowMain}
-                      accessibilityRole="button">
+                      accessibilityRole="button"
+                    >
                       <View style={styles.rowTitleRow}>
-                        <ThemedText type="smallBold" numberOfLines={1} style={styles.rowTitle}>
-                          {labelFromPrompts(dialog.prompts) || t('batches.untitled')}
+                        <ThemedText type="code" themeColor="textSecondary">
+                          {dialogBadge(index, t("batches.dialogLabel"))}
                         </ThemedText>
                         {active ? (
                           <ThemedText
                             type="code"
-                            style={[styles.activeTag, { backgroundColor: '#3c87f7' }]}>
-                            {t('batches.activeTag')}
+                            style={[
+                              styles.activeTag,
+                              { backgroundColor: "#3c87f7" },
+                            ]}
+                          >
+                            {t("batches.activeTag")}
                           </ThemedText>
                         ) : null}
                       </View>
-                      <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
+                      <ThemedText
+                        type="smallBold"
+                        numberOfLines={1}
+                        style={styles.rowTitle}
+                      >
+                        {labelFromPrompts(dialog.prompts) ||
+                          t("batches.untitled")}
+                      </ThemedText>
+                      <ThemedText
+                        type="code"
+                        themeColor="textSecondary"
+                        numberOfLines={1}
+                      >
                         {dialog.model}
                       </ThemedText>
                       <ThemedText type="code" themeColor="textSecondary">
-                        {formatTime(dialog.createdAt)} ·{' '}
-                        {t('batches.questionsCount', { count: dialog.prompts.length })}
+                        {formatTime(dialog.createdAt)} ·{" "}
+                        {t("batches.questionsCount", {
+                          count: dialog.prompts.length,
+                        })}
                       </ThemedText>
                     </Pressable>
                     <Pressable
                       onPress={() => onDelete(dialog.id)}
                       hitSlop={8}
                       style={styles.deleteButton}
-                      accessibilityLabel={t('common.delete')}>
+                      accessibilityLabel={t("common.delete")}
+                    >
                       <ThemedText type="small" themeColor="textSecondary">
                         ✕
                       </ThemedText>
@@ -247,7 +301,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   panel: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     bottom: 0,
@@ -258,15 +312,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 16,
     elevation: 12,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   flex: {
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
@@ -276,15 +330,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: Spacing.three,
   },
   newButton: {
     paddingVertical: Spacing.one,
   },
   newText: {
-    color: '#3c87f7',
+    color: "#3c87f7",
   },
   closeButton: {
     paddingHorizontal: Spacing.one,
@@ -312,12 +366,12 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   emptyHint: {
-    textAlign: 'center',
+    textAlign: "center",
     paddingVertical: Spacing.four,
   },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
     borderRadius: Spacing.three,
     paddingHorizontal: Spacing.three,
@@ -330,20 +384,20 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   rowTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: Spacing.two,
   },
   rowTitle: {
     flex: 1,
   },
   activeTag: {
-    color: '#ffffff',
+    color: "#ffffff",
     fontSize: 10,
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.one,
     paddingVertical: 1,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   preview: {
     lineHeight: 18,

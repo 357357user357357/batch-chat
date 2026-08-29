@@ -1,19 +1,19 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from "react";
 import {
-  Animated,
-  Modal,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  TextInput,
-  useWindowDimensions,
-  View,
-} from 'react-native';
+    Animated,
+    Modal,
+    Pressable,
+    ScrollView,
+    StyleSheet,
+    TextInput,
+    useWindowDimensions,
+    View,
+} from "react-native";
 
-import { ThemedText } from '@/components/themed-text';
-import { Spacing } from '@/constants/theme';
-import { useI18n } from '@/i18n';
-import { useTheme } from '@/hooks/use-theme';
+import { ThemedText } from "@/components/themed-text";
+import { Spacing } from "@/constants/theme";
+import { useTheme } from "@/hooks/use-theme";
+import { useI18n } from "@/i18n";
 
 /**
  * A single chat dialog listed in the drawer.
@@ -25,7 +25,7 @@ export type ChatDialogSummary = {
   id: string;
   title: string;
   model: string;
-  messages: Array<{ role: string; content: string }>;
+  messages: { role: string; content: string }[];
   updatedAt: number;
 };
 
@@ -45,9 +45,16 @@ const PANEL_WIDTH = 320;
 
 function formatTime(timestamp: number): string {
   const date = new Date(timestamp);
-  const day = date.toLocaleDateString([], { month: 'short', day: 'numeric' });
-  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const day = date.toLocaleDateString([], { month: "short", day: "numeric" });
+  const time = date.toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
   return `${day} ${time}`;
+}
+
+function dialogBadge(index: number, prefix: string): string {
+  return `${prefix} ${String(index + 1).padStart(2, "0")}`;
 }
 
 /**
@@ -73,7 +80,7 @@ export function ChatDrawer({
 
   // Keep the `Modal` mounted while the close animation plays out.
   const [mounted, setMounted] = useState(visible);
-  const [search, setSearch] = useState('');
+  const [search, setSearch] = useState("");
   const progress = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -98,7 +105,7 @@ export function ChatDrawer({
 
   // Clear the search whenever the drawer is closed.
   useEffect(() => {
-    if (!visible) setSearch('');
+    if (!visible) setSearch("");
   }, [visible]);
 
   if (!mounted) return null;
@@ -113,9 +120,9 @@ export function ChatDrawer({
   const query = search.trim().toLowerCase();
   const filtered = query
     ? sorted.filter((dialog) =>
-        `${dialog.title} ${dialog.messages.map((m) => m.content).join(' ')}`
+        `${dialog.title} ${dialog.messages.map((m) => m.content).join(" ")}`
           .toLowerCase()
-          .includes(query)
+          .includes(query),
       )
     : sorted;
 
@@ -125,17 +132,15 @@ export function ChatDrawer({
       transparent
       animationType="none"
       statusBarTranslucent
-      onRequestClose={onClose}>
+      onRequestClose={onClose}
+    >
       <View style={styles.overlay}>
         {/* Tap outside the panel to close. */}
         <Animated.View style={[StyleSheet.absoluteFill, { opacity: progress }]}>
           <Pressable
             onPress={onClose}
-            accessibilityLabel={t('common.close')}
-            style={[
-              styles.backdrop,
-              { backgroundColor: 'rgba(0,0,0,0.5)' },
-            ]}
+            accessibilityLabel={t("common.close")}
+            style={[styles.backdrop, { backgroundColor: "rgba(0,0,0,0.5)" }]}
           />
         </Animated.View>
 
@@ -146,22 +151,35 @@ export function ChatDrawer({
               width,
               backgroundColor: theme.background,
               borderColor: theme.backgroundSelected,
-              shadowColor: '#000000',
+              shadowColor: "#000000",
               transform: [{ translateX }],
             },
-          ]}>
+          ]}
+        >
           <View
-            style={[styles.header, { borderBottomColor: theme.backgroundSelected }]}>
-            <ThemedText type="subtitle" numberOfLines={1} style={styles.headerTitle}>
-              {t('chat.dialogs')}
+            style={[
+              styles.header,
+              { borderBottomColor: theme.backgroundSelected },
+            ]}
+          >
+            <ThemedText
+              type="subtitle"
+              numberOfLines={1}
+              style={styles.headerTitle}
+            >
+              {t("chat.dialogs")}
             </ThemedText>
             <View style={styles.headerActions}>
               <Pressable onPress={onNew} hitSlop={8} style={styles.newButton}>
                 <ThemedText type="smallBold" style={styles.newText}>
-                  + {t('chat.newDialog')}
+                  + {t("chat.newDialog")}
                 </ThemedText>
               </Pressable>
-              <Pressable onPress={onClose} hitSlop={8} style={styles.closeButton}>
+              <Pressable
+                onPress={onClose}
+                hitSlop={8}
+                style={styles.closeButton}
+              >
                 <ThemedText type="subtitle" style={styles.closeText}>
                   ×
                 </ThemedText>
@@ -172,7 +190,7 @@ export function ChatDrawer({
             <TextInput
               value={search}
               onChangeText={setSearch}
-              placeholder={t('chat.searchPlaceholder')}
+              placeholder={t("chat.searchPlaceholder")}
               placeholderTextColor={theme.textSecondary}
               autoCorrect={false}
               style={[
@@ -188,19 +206,24 @@ export function ChatDrawer({
           <ScrollView
             style={styles.flex}
             contentContainerStyle={styles.listContent}
-            keyboardShouldPersistTaps="handled">
+            keyboardShouldPersistTaps="handled"
+          >
             {filtered.length === 0 ? (
-              <ThemedText themeColor="textSecondary" type="small" style={styles.emptyHint}>
-                {query ? t('common.noMatch') : t('chat.noDialogs')}
+              <ThemedText
+                themeColor="textSecondary"
+                type="small"
+                style={styles.emptyHint}
+              >
+                {query ? t("common.noMatch") : t("chat.noDialogs")}
               </ThemedText>
             ) : (
-              filtered.map((dialog) => {
+              filtered.map((dialog, index) => {
                 const last = dialog.messages[dialog.messages.length - 1];
                 const preview = last
-                  ? last.role === 'user'
-                    ? `${t('chat.you')}: ${last.content}`
+                  ? last.role === "user"
+                    ? `${t("chat.you")}: ${last.content}`
                     : last.content
-                  : '';
+                  : "";
                 const active = dialog.id === activeId;
                 return (
                   <View
@@ -211,26 +234,45 @@ export function ChatDrawer({
                         backgroundColor: active
                           ? theme.backgroundSelected
                           : theme.backgroundElement,
-                        borderColor: active ? '#3c87f7' : theme.backgroundSelected,
+                        borderColor: active
+                          ? "#3c87f7"
+                          : theme.backgroundSelected,
                       },
-                    ]}>
+                    ]}
+                  >
                     <Pressable
                       onPress={() => onSelect(dialog.id)}
                       style={styles.rowMain}
-                      accessibilityRole="button">
+                      accessibilityRole="button"
+                    >
                       <View style={styles.rowTitleRow}>
-                        <ThemedText type="smallBold" numberOfLines={1} style={styles.rowTitle}>
-                          {dialog.title || t('chat.untitled')}
+                        <ThemedText type="code" themeColor="textSecondary">
+                          {dialogBadge(index, t("chat.dialogLabel"))}
                         </ThemedText>
                         {active ? (
                           <ThemedText
                             type="code"
-                            style={[styles.activeTag, { backgroundColor: '#3c87f7' }]}>
-                            {t('chat.activeTag')}
+                            style={[
+                              styles.activeTag,
+                              { backgroundColor: "#3c87f7" },
+                            ]}
+                          >
+                            {t("chat.activeTag")}
                           </ThemedText>
                         ) : null}
                       </View>
-                      <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
+                      <ThemedText
+                        type="smallBold"
+                        numberOfLines={1}
+                        style={styles.rowTitle}
+                      >
+                        {dialog.title || t("chat.untitled")}
+                      </ThemedText>
+                      <ThemedText
+                        type="code"
+                        themeColor="textSecondary"
+                        numberOfLines={1}
+                      >
                         {dialog.model}
                       </ThemedText>
                       {preview ? (
@@ -238,12 +280,17 @@ export function ChatDrawer({
                           type="small"
                           themeColor="textSecondary"
                           numberOfLines={2}
-                          style={styles.preview}>
+                          style={styles.preview}
+                        >
                           {preview}
                         </ThemedText>
                       ) : (
-                        <ThemedText type="small" themeColor="textSecondary" style={styles.preview}>
-                          {t('chat.emptyDialog')}
+                        <ThemedText
+                          type="small"
+                          themeColor="textSecondary"
+                          style={styles.preview}
+                        >
+                          {t("chat.emptyDialog")}
                         </ThemedText>
                       )}
                       <ThemedText type="code" themeColor="textSecondary">
@@ -254,7 +301,8 @@ export function ChatDrawer({
                       onPress={() => onDelete(dialog.id)}
                       hitSlop={8}
                       style={styles.deleteButton}
-                      accessibilityLabel={t('common.delete')}>
+                      accessibilityLabel={t("common.delete")}
+                    >
                       <ThemedText type="small" themeColor="textSecondary">
                         ✕
                       </ThemedText>
@@ -278,7 +326,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   panel: {
-    position: 'absolute',
+    position: "absolute",
     top: 0,
     left: 0,
     bottom: 0,
@@ -289,15 +337,15 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 16,
     elevation: 12,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   flex: {
     flex: 1,
   },
   header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.three,
@@ -307,15 +355,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   headerActions: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: Spacing.three,
   },
   newButton: {
     paddingVertical: Spacing.one,
   },
   newText: {
-    color: '#3c87f7',
+    color: "#3c87f7",
   },
   closeButton: {
     paddingHorizontal: Spacing.one,
@@ -343,12 +391,12 @@ const styles = StyleSheet.create({
     minHeight: 44,
   },
   emptyHint: {
-    textAlign: 'center',
+    textAlign: "center",
     paddingVertical: Spacing.four,
   },
   row: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     borderWidth: 1,
     borderRadius: Spacing.three,
     paddingHorizontal: Spacing.three,
@@ -361,20 +409,20 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   rowTitleRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: Spacing.two,
   },
   rowTitle: {
     flex: 1,
   },
   activeTag: {
-    color: '#ffffff',
+    color: "#ffffff",
     fontSize: 10,
     borderRadius: Spacing.two,
     paddingHorizontal: Spacing.one,
     paddingVertical: 1,
-    overflow: 'hidden',
+    overflow: "hidden",
   },
   preview: {
     lineHeight: 18,
