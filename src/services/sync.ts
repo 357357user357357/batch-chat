@@ -81,6 +81,27 @@ function normalizeServerUrl(url: string): string {
   return url.trim().replace(/\/+$/, "");
 }
 
+const FETCH_TIMEOUT_MS = 15000;
+
+/** fetch() with a hard timeout so a dead/unreachable server fails loudly
+ * instead of leaving the UI stuck on "Syncing…" forever. */
+async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      throw new Error(
+        "The server didn't respond in time — check the address and your connection.",
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export async function getSyncSettings(): Promise<SyncSettings | null> {
   return loadJSON<SyncSettings | null>(SYNC_SETTINGS_KEY, null);
 }
@@ -91,7 +112,7 @@ export async function pairDevice(serverUrl: string, password: string): Promise<v
   if (!base) {
     throw new Error("Enter the server address (e.g. https://myserver.example.com).");
   }
-  const resp = await fetch(`${base}/api/auth/login`, {
+  const resp = await fetchWithTimeout(`${base}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
@@ -236,7 +257,7 @@ export async function runSync(): Promise<SyncSummary> {
     getStoredTavilyApiKey(),
   ]);
 
-  const pushResp = await fetch(`${settings.serverUrl}/api/sync/push`, {
+  const pushResp = await fetchWithTimeout(`${settings.serverUrl}/api/sync/push`, {
     method: "POST",
     headers,
     body: JSON.stringify({
@@ -271,7 +292,7 @@ export async function runSync(): Promise<SyncSummary> {
 
   const pullUrl = new URL(`${settings.serverUrl}/api/sync/pull`);
   if (settings.lastSyncAt) pullUrl.searchParams.set("since", settings.lastSyncAt);
-  const pullResp = await fetch(pullUrl.toString(), { headers });
+  const pullResp = await fetchWithTimeout(pullUrl.toString(), { headers });
   if (!pullResp.ok) throw new Error(await syncErrorMessage(pullResp));
   const pullResult = (await pullResp.json()) as {
     server_time: string;
