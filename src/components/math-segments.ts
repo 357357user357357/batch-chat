@@ -6,9 +6,12 @@ export type MathSegment = { kind: "text" | "math"; value: string };
 //   \( ... \)   (inline math)
 //   $ ... $     (inline math)
 // The single-dollar rule requires a non-space, non-$ char right inside each
-// dollar (and no newline between) so amounts like "$5" aren't mistaken for math.
+// dollar so amounts like "$5" aren't mistaken for math. Newlines are allowed
+// inside (bounded to 400 chars, like \(...\)) since model output often wraps
+// a sentence containing inline math across an actual line break, not just a
+// visual one — excluding \n here used to make MathJax silently skip those.
 const MATH_PATTERN =
-  /(\$\$[\s\S]{1,4000}?\$\$|\\\[[\s\S]{1,4000}?\\\]|\\\([\s\S]{1,400}?\\\)|\$[^\s$](?:[^$\n]*[^\s$])?\$)/g;
+  /(\$\$[\s\S]{1,4000}?\$\$|\\\[[\s\S]{1,4000}?\\\]|\\\([\s\S]{1,400}?\\\)|\$[^\s$](?:[^$]{0,398}[^\s$])?\$)/g;
 
 export function splitMathSegments(text: string): MathSegment[] {
   const segments: MathSegment[] = [];
