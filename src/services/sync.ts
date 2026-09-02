@@ -12,6 +12,12 @@ import {
   type OpenRouterBatch,
   type OpenRouterBatchResultItem,
 } from "@/services/openrouter";
+import {
+  getStoredApiKey,
+  getStoredTavilyApiKey,
+  storeApiKey,
+  storeTavilyApiKey,
+} from "@/services/key-store";
 import { loadJSON, saveJSON } from "@/services/storage";
 
 const DIALOGS_STORAGE_KEY = "openrouter.dialogs.v1";
@@ -223,6 +229,13 @@ export async function runSync(): Promise<SyncSummary> {
     Authorization: `Bearer ${settings.token}`,
   };
 
+  // Offer this device's provider keys so the server can adopt any it lacks
+  // (unified OpenRouter/Tavily keys across phone + server).
+  const [openrouterKey, tavilyKey] = await Promise.all([
+    getStoredApiKey(),
+    getStoredTavilyApiKey(),
+  ]);
+
   const pushResp = await fetch(`${settings.serverUrl}/api/sync/push`, {
     method: "POST",
     headers,
@@ -243,6 +256,10 @@ export async function runSync(): Promise<SyncSummary> {
         batch: b.batch,
       })),
       deleted_external_ids: deletedIds,
+      keys: {
+        openrouter_api_key: openrouterKey ?? "",
+        tavily_api_key: tavilyKey ?? "",
+      },
     }),
   });
   if (!pushResp.ok) throw new Error(await syncErrorMessage(pushResp));
@@ -259,7 +276,16 @@ export async function runSync(): Promise<SyncSummary> {
   const pullResult = (await pullResp.json()) as {
     server_time: string;
     conversations: PulledConversation[];
+    keys?: { openrouter_api_key?: string; tavily_api_key?: string };
   };
+
+  // Adopt any keys the server already has that this device is missing.
+  if (pullResult.keys?.openrouter_api_key && !(await getStoredApiKey())) {
+    await storeApiKey(pullResult.keys.openrouter_api_key);
+  }
+  if (pullResult.keys?.tavily_api_key && !(await getStoredTavilyApiKey())) {
+    await storeTavilyApiKey(pullResult.keys.tavily_api_key);
+  }
 
   let nextDialogs = dialogs;
   let nextBatches = batches;
