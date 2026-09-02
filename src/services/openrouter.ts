@@ -28,7 +28,7 @@ export type OpenRouterMessage = {
 
 /** Explicit Anthropic-style prompt caching with the TTL the user chose in the
  * app (300s = 5 minutes, or 3600s = 1 hour). */
-type PromptCacheControl = { type: "ephemeral"; ttl: number };
+type PromptCacheControl = { type: "ephemeral"; ttl?: "1h" };
 type CachedTextBlock = {
   type: "text";
   text: string;
@@ -46,6 +46,11 @@ function withPromptCache(
   ttlSeconds: number
 ): CacheableMessage[] {
   if (ttlSeconds <= 0) return messages;
+  // OpenRouter expects an Anthropic cache_control where the 5-minute cache is
+  // just "ephemeral" (no ttl) and the extended cache is the string "1h". A
+  // numeric ttl-in-seconds is silently dropped, which disables caching entirely.
+  const cacheControl: PromptCacheControl =
+    ttlSeconds >= 3600 ? { type: "ephemeral", ttl: "1h" } : { type: "ephemeral" };
   const breakpoint = messages.length >= 2 ? messages.length - 2 : 0;
   return messages.map((message, index) => {
     if (index !== breakpoint || typeof message.content !== "string") {
@@ -57,7 +62,7 @@ function withPromptCache(
         {
           type: "text",
           text: message.content,
-          cache_control: { type: "ephemeral", ttl: ttlSeconds },
+          cache_control: cacheControl,
         },
       ],
     };
