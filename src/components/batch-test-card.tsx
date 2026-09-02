@@ -32,6 +32,14 @@ import {
   type OpenRouterBatch,
 } from "@/services/openrouter";
 import { searchWeb } from "@/services/tavily";
+import {
+  CACHE_TTL_1_HOUR,
+  CACHE_TTL_5_MINUTES,
+  DEFAULT_CACHE_DURATION_SECONDS,
+  getCacheDurationSeconds,
+  setCacheDurationSeconds,
+  type CacheDurationSeconds,
+} from "@/services/cache-settings";
 
 const DEMO_JOBS = [
   {
@@ -74,6 +82,9 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
   const [statusText, setStatusText] = useState("");
   const [batch, setBatch] = useState<OpenRouterBatch | null>(null);
   const [answers, setAnswers] = useState<BatchOutcome[]>([]);
+  const [cacheDuration, setCacheDuration] = useState<CacheDurationSeconds>(
+    DEFAULT_CACHE_DURATION_SECONDS,
+  );
 
   const refreshKeyState = useCallback(async () => {
     setEnvKey(getEnvApiKey());
@@ -84,6 +95,12 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
   useEffect(() => {
     void refreshKeyState();
   }, [refreshKeyState]);
+
+  useEffect(() => {
+    void (async () => {
+      setCacheDuration(await getCacheDurationSeconds());
+    })();
+  }, []);
 
   const handleSaveKey = async () => {
     const key = inputKey.trim();
@@ -133,6 +150,11 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
     await clearStoredTavilyApiKey();
     await refreshKeyState();
     setStatusText(t("card.tavilyDeleted"));
+  };
+
+  const selectCacheDuration = async (seconds: CacheDurationSeconds) => {
+    setCacheDuration(seconds);
+    await setCacheDurationSeconds(seconds);
   };
 
   const handleTestTavily = async () => {
@@ -351,6 +373,53 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
         </Pressable>
       </View>
 
+      <View style={styles.sectionBreak} />
+
+      <ThemedText type="smallBold">{t("cache.durationTitle")}</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {t("cache.durationSubtitle")}
+      </ThemedText>
+      <View style={styles.buttonRow}>
+        <Pressable
+          onPress={() => selectCacheDuration(CACHE_TTL_5_MINUTES)}
+          style={({ pressed }) => [
+            styles.chip,
+            cacheDuration === CACHE_TTL_5_MINUTES && styles.chipSelected,
+            pressed && styles.buttonDim,
+          ]}
+        >
+          <ThemedText
+            type="small"
+            themeColor={
+              cacheDuration === CACHE_TTL_5_MINUTES
+                ? "backgroundElement"
+                : "textSecondary"
+            }
+          >
+            {t("cache.minutes5")}
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          onPress={() => selectCacheDuration(CACHE_TTL_1_HOUR)}
+          style={({ pressed }) => [
+            styles.chip,
+            cacheDuration === CACHE_TTL_1_HOUR && styles.chipSelected,
+            pressed && styles.buttonDim,
+          ]}
+        >
+          <ThemedText
+            type="small"
+            themeColor={
+              cacheDuration === CACHE_TTL_1_HOUR
+                ? "backgroundElement"
+                : "textSecondary"
+            }
+          >
+            {t("cache.hours1")}
+          </ThemedText>
+        </Pressable>
+      </View>
+
       {statusText ? (
         <ThemedText type="small" style={styles.status}>
           {statusText}
@@ -446,6 +515,20 @@ const styles = StyleSheet.create({
   },
   status: {
     marginTop: Spacing.one,
+  },
+  chip: {
+    flex: 1,
+    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    borderRadius: Spacing.two,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: "rgba(128,128,128,0.4)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  chipSelected: {
+    backgroundColor: "#3c87f7",
+    borderColor: "#3c87f7",
   },
   mono: {
     fontSize: 11,

@@ -93,6 +93,12 @@ const en = {
   "card.batchError": "Batch failed",
   "card.errorPrefix": "Error: {message}",
 
+  "cache.durationTitle": "Prompt cache duration",
+  "cache.durationSubtitle":
+    "How long reused prompt text stays cached (applies to chat and batches).",
+  "cache.minutes5": "5 minutes",
+  "cache.hours1": "1 hour",
+
   "backup.title": "Backup & move to a new phone",
   "backup.subtitle":
     "Export everything (keys, chats, batches) into one file. On the new phone, import that file and you're back up and running.",

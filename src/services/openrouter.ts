@@ -17,12 +17,52 @@
  * the standard per-token model price.
  */
 
+import { getCacheDurationSeconds } from "@/services/cache-settings";
+
 export type OpenRouterRole = 'system' | 'user' | 'assistant';
 
 export type OpenRouterMessage = {
   role: OpenRouterRole;
   content: string;
 };
+
+/** Explicit Anthropic-style prompt caching with the TTL the user chose in the
+ * app (300s = 5 minutes, or 3600s = 1 hour). */
+type PromptCacheControl = { type: "ephemeral"; ttl: number };
+type CachedTextBlock = {
+  type: "text";
+  text: string;
+  cache_control: PromptCacheControl;
+};
+type CacheableMessage =
+  | OpenRouterMessage
+  | { role: OpenRouterRole; content: CachedTextBlock[] };
+
+/** Marks a request's message array as a prompt-cache prefix. The final message
+ * is left dynamic (it is the new question/turn); the breakpoint is the message
+ * right before it, so the stable prefix (system + history) is cached. */
+function withPromptCache(
+  messages: OpenRouterMessage[],
+  ttlSeconds: number
+): CacheableMessage[] {
+  if (ttlSeconds <= 0) return messages;
+  const breakpoint = messages.length >= 2 ? messages.length - 2 : 0;
+  return messages.map((message, index) => {
+    if (index !== breakpoint || typeof message.content !== "string") {
+      return message;
+    }
+    return {
+      role: message.role,
+      content: [
+        {
+          type: "text",
+          text: message.content,
+          cache_control: { type: "ephemeral", ttl: ttlSeconds },
+        },
+      ],
+    };
+  });
+}
 
 export type ChatRequestOptions = {
   /** OpenRouter model id, e.g. "openai/gpt-4o-mini" or your custom model alias. */
@@ -167,7 +207,7 @@ async function requestWithTimeout(
       },
       body: JSON.stringify({
         model: options.model,
-        messages,
+        messages: withPromptCache(messages, await getCacheDurationSeconds()),
         temperature: options.temperature,
         max_tokens: options.max_tokens,
       }),
@@ -316,7 +356,7 @@ const BATCH_TERMINAL_STATUSES: ReadonlySet<OpenRouterBatchStatus> = new Set([
 export type OpenRouterBatchRequest = {
   custom_id: string;
   body: {
-    messages: OpenRouterMessage[];
+    messages: CacheableMessage[];
     temperature?: number;
     max_tokens?: number;
   };
@@ -390,10 +430,11 @@ export async function createBatch(
     );
   }
 
+  const ttlSeconds = await getCacheDurationSeconds();
   const requests: OpenRouterBatchRequest[] = jobs.map((job, index) => ({
     custom_id: `req-${index + 1}`,
     body: {
-      messages: job.messages,
+      messages: withPromptCache(job.messages, ttlSeconds),
       ...(job.options?.temperature !== undefined
         ? { temperature: job.options.temperature }
         : {}),
