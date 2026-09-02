@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -40,6 +40,20 @@ export function SyncCard() {
     void refresh();
   }, [refresh]);
 
+  const performSync = useCallback(async () => {
+    setBusy("syncing");
+    setStatusText(t("sync.syncing"));
+    try {
+      const result = await runSync();
+      setStatusText(
+        t("sync.syncDone", { pushed: result.pushed, pulled: result.pulled })
+      );
+      await refresh();
+    } finally {
+      setBusy("idle");
+    }
+  }, [t, refresh]);
+
   const handlePair = async () => {
     if (!serverUrl.trim() || !password) return;
     setBusy("pairing");
@@ -48,6 +62,12 @@ export function SyncCard() {
       await pairDevice(serverUrl, password);
       setPassword("");
       await refresh();
+      // Immediately push/pull so the freshly-paired device is up to date.
+      try {
+        await performSync();
+      } catch {
+        // Pairing succeeded; a sync error here can be retried via "Sync now".
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       Alert.alert(t("sync.pairFail"), message);
@@ -74,22 +94,31 @@ export function SyncCard() {
   };
 
   const handleSync = async () => {
-    setBusy("syncing");
-    setStatusText(t("sync.syncing"));
     try {
-      const result = await runSync();
-      setStatusText(
-        t("sync.syncDone", { pushed: result.pushed, pulled: result.pulled })
-      );
-      await refresh();
+      await performSync();
     } catch (error) {
       setStatusText("");
       const message = error instanceof Error ? error.message : String(error);
       Alert.alert(t("sync.syncFail"), message);
-    } finally {
-      setBusy("idle");
     }
   };
+
+  // Auto-sync once on mount when already paired (upload/download over the
+  // internet without needing to tap "Sync now").
+  const autoSyncedRef = useRef(false);
+  useEffect(() => {
+    if (autoSyncedRef.current) return;
+    autoSyncedRef.current = true;
+    void (async () => {
+      const existing = await getSyncSettings();
+      if (!existing) return;
+      try {
+        await performSync();
+      } catch {
+        // Silent on launch — the manual button still surfaces real errors.
+      }
+    })();
+  }, [performSync]);
 
   return (
     <ThemedView type="backgroundElement" style={styles.card}>
