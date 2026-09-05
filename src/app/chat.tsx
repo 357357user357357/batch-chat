@@ -25,6 +25,7 @@ import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
+import { getSyncSettings, runSync } from "@/services/sync";
 import {
     chat,
     formatQuestionLatex,
@@ -219,6 +220,28 @@ export default function ChatScreen() {
     if (!hydrated) return;
     void saveJSON(DIALOGS_STORAGE_KEY, dialogs);
   }, [dialogs, hydrated]);
+
+  // Silent sync-on-start (paired devices only): server tombstones are applied
+  // immediately — dialogs deleted on any device disappear from this one too,
+  // without pressing "Sync now" — and anything new is pulled. Failures
+  // (offline, unpaired) are silently ignored; local state stays as-is.
+  useEffect(() => {
+    if (!hydrated) return;
+    void (async () => {
+      try {
+        const settings = await getSyncSettings();
+        if (!settings) return;
+        await runSync();
+        const list = await loadJSON<Dialog[] | null>(DIALOGS_STORAGE_KEY, null);
+        if (!Array.isArray(list)) return;
+        setDialogs(list);
+        setActiveId((current) =>
+          current && list.some((dialog) => dialog.id === current) ? current : null);
+      } catch {
+        // Keep local state on any sync problem.
+      }
+    })();
+  }, [hydrated]);
 
   useEffect(() => {
     if (!hydrated) return;
