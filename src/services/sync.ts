@@ -248,6 +248,9 @@ export async function runSync(): Promise<SyncSummary> {
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${settings.token}`,
+    // Audit trail on the master server: which device created/modified/deleted
+    // each synced record.
+    "X-Device-Name": "redmi-note-9t",
   };
 
   // Offer this device's provider keys so the server can adopt any it lacks
