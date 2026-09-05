@@ -54,3 +54,16 @@ npx expo start
   (no more clipped formulas)
 - `src/components/model-browser.tsx` — searchable, sortable catalog of all models
 - `src/services/openrouter.ts` — OpenRouter sync + batch + models catalog
+## Server sync & security (HTTPS + cert pinning)
+
+When pairing with the server, use the **https** URL:
+
+```
+https://194.36.85.208:8443
+```
+
+The app embeds the server's root CA (`res/raw/batch_chat_ca.pem`) and pins it
+via Android's network security config — the password, tokens and dialogs are
+encrypted in transit, and Android refuses any certificate that was not issued
+by that CA (man-in-the-middle protection). If the server certs are regenerated
+(`scripts/gen-certs.sh` on the server), copy the new `ca.crt` here and rebuild.
