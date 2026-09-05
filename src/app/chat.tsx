@@ -60,6 +60,27 @@ const SYSTEM_PROMPT =
   "You are a helpful assistant. Write mathematical formulas as LaTeX, using " +
   "$$...$$ for display math and \\(...\\) for inline math.";
 
+/** The model has no clock — tell it the device's real date/time so questions
+ * like "what time is it now" don't get answered from training data or from
+ * whatever time a fetched web page happens to mention. */
+function currentDateTimePrompt(): string {
+  const now = new Date();
+  const formatted = now.toLocaleString([], {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+  return (
+    `Current date and time: ${formatted} (${Intl.DateTimeFormat().resolvedOptions().timeZone}) — ` +
+    "the reliable device clock. Answer questions about the current time, " +
+    "date, or day of the week from this — never from web snippets or " +
+    "training data."
+  );
+}
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -389,7 +410,7 @@ export default function ChatScreen() {
       const requestMessages: OpenRouterMessage[] = [
         {
           role: "system",
-          content: `${SYSTEM_PROMPT}${
+          content: `${currentDateTimePrompt()}\n\n${SYSTEM_PROMPT}${
             webResults.length
               ? `\n\nUse the most relevant web context below when answering.\n\n${webSearchContext(text, webResults)}`
               : ""

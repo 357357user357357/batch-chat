@@ -98,8 +98,17 @@ export function webSearchContext(
   query: string,
   results: TavilySearchResult[],
 ): string {
+  const searchedAt = new Date().toLocaleString([], {
+    weekday: "long",
+    day: "2-digit",
+    month: "long",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
   if (!results.length) {
-    return `Web search results for "${query}": none.`;
+    return `Web search results for "${query}" (searched at ${searchedAt}): none.`;
   }
 
   const summary = results
@@ -109,5 +118,10 @@ export function webSearchContext(
     })
     .join("\n\n");
 
-  return `Web search results for "${query}":\n\n${summary}`;
+  return (
+    `Web search results for "${query}" (searched at ${searchedAt} — snippets ` +
+    "may be outdated; use the Current date and time from this system prompt " +
+    "as 'now', never the times found inside pages):\n\n" +
+    summary
+  );
 }
