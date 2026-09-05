@@ -40,6 +40,8 @@ const MAX_JOBS = 30;
 const HISTORY_STORAGE_KEY = "openrouter.batches.history.v1";
 const SELECTED_STORAGE_KEY = "openrouter.batches.selected.v1";
 const REASONING_STORAGE_KEY = "openrouter.batches.reasoning.v1";
+// Persist the chosen batch model so it becomes your default on next launch.
+const MODEL_STORAGE_KEY = "openrouter.batches.model.v1";
 
 type HistoryItem = {
   id: string;
@@ -204,7 +206,9 @@ export default function BatchesScreen() {
       const items = await loadJSON<HistoryItem[]>(HISTORY_STORAGE_KEY, []);
       const savedSelectedId = await loadString(SELECTED_STORAGE_KEY);
       const savedReasoning = await loadString(REASONING_STORAGE_KEY);
+      const savedModel = await loadString(MODEL_STORAGE_KEY);
       if (cancelled) return;
+      if (savedModel) setModel(savedModel);
       if (
         savedReasoning === "none" || savedReasoning === "low" ||
         savedReasoning === "medium" || savedReasoning === "high" ||
@@ -248,6 +252,12 @@ export default function BatchesScreen() {
     if (!hydrated) return;
     void saveString(REASONING_STORAGE_KEY, reasoning);
   }, [reasoning, hydrated]);
+
+  // Persist the batch model so it is the default on the next launch.
+  useEffect(() => {
+    if (!hydrated) return;
+    void saveString(MODEL_STORAGE_KEY, model);
+  }, [model, hydrated]);
 
   /** 🧠 chip: cycle Default → None → Low → Medium → High → XHigh → Max. */
   const cycleReasoning = () => {

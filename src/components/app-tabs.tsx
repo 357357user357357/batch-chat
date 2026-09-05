@@ -1,6 +1,5 @@
 import { Tabs } from "expo-router/js-tabs";
-import { useEffect, useRef } from "react";
-import { Animated, Image, useColorScheme, type ColorValue } from "react-native";
+import { Image, Pressable, useColorScheme, type ColorValue } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { Colors } from "@/constants/theme";
@@ -12,28 +11,12 @@ const TAB_BAR_CONTENT_HEIGHT = 44;
 function TabIcon({
   src,
   color,
-  focused,
 }: {
   src: number;
   color: ColorValue;
-  focused: boolean;
 }) {
-  const scale = useRef(new Animated.Value(focused ? 1 : 0.92)).current;
-
-  useEffect(() => {
-    Animated.spring(scale, {
-      toValue: focused ? 1 : 0.92,
-      friction: 6,
-      tension: 140,
-      useNativeDriver: true,
-    }).start();
-  }, [focused, scale]);
-
-  return (
-    <Animated.View style={{ transform: [{ scale }] }}>
-      <Image source={src} style={{ width: 24, height: 24, tintColor: color }} />
-    </Animated.View>
-  );
+  // Static icon: no spring/scale animation on tab switches (user request).
+  return <Image source={src} style={{ width: 24, height: 24, tintColor: color }} />;
 }
 
 export default function AppTabs() {
@@ -53,6 +36,12 @@ export default function AppTabs() {
         tabBarShowLabel: false,
         tabBarActiveTintColor: colors.text,
         tabBarInactiveTintColor: colors.textSecondary,
+        // No press ripple / highlight on the tab buttons (user request).
+        // The incoming ref/android_ripple types don't match RN's Pressable,
+        // so strip them and render a plain, animation-free button.
+        tabBarButton: ({ android_ripple: _ripple, ref: _ref, ...props }) => (
+          <Pressable {...props} />
+        ),
         tabBarStyle: {
           height: TAB_BAR_CONTENT_HEIGHT + bottomInset,
           paddingBottom: bottomInset,
@@ -69,7 +58,6 @@ export default function AppTabs() {
             <TabIcon
               src={require("@/assets/images/tabIcons/home.png")}
               color={color}
-              focused={focused}
             />
           ),
         }}
@@ -82,7 +70,6 @@ export default function AppTabs() {
             <TabIcon
               src={require("@/assets/images/tabIcons/chat.png")}
               color={color}
-              focused={focused}
             />
           ),
         }}
@@ -95,7 +82,6 @@ export default function AppTabs() {
             <TabIcon
               src={require("@/assets/images/tabIcons/batches.png")}
               color={color}
-              focused={focused}
             />
           ),
         }}

@@ -55,6 +55,9 @@ const ACTIVE_DIALOG_STORAGE_KEY = "openrouter.active-dialog.v1";
 const REASONING_STORAGE_KEY = "openrouter.reasoning-effort.v1";
 /** Flex processing-tier toggle (🧊 chip): appends `:flex` to the model on send. */
 const FLEX_STORAGE_KEY = "openrouter.flex-mode.v1";
+// Default model for newly created dialogs: updated whenever you pick a
+// different model in the picker, so new chats start with your last choice.
+const DEFAULT_MODEL_STORAGE_KEY = "openrouter.default-model.v1";
 const LEGACY_STORAGE_KEY = "openrouter.chat.v1";
 /** Hard ceiling on how many messages are kept / persisted per dialog. */
 const MAX_MESSAGES = 120;
@@ -151,6 +154,9 @@ export default function ChatScreen() {
   // Flex processing tier (like the web UI's 🧊 Flex): cheaper/slower; the
   // service falls back to the standard tier automatically when unsupported.
   const [flexOn, setFlexOn] = useState(false);
+  // Your preferred default model for new dialogs (persisted; falls back to
+  // OPENROUTER_MODEL until you pick one for the first time).
+  const [defaultModel, setDefaultModel] = useState(OPENROUTER_MODEL);
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -202,6 +208,9 @@ export default function ChatScreen() {
       const savedFlex = await loadString(FLEX_STORAGE_KEY);
       if (cancelled) return;
       if (savedFlex === "1") setFlexOn(true);
+      const savedDefaultModel = await loadString(DEFAULT_MODEL_STORAGE_KEY);
+      if (cancelled) return;
+      if (savedDefaultModel) setDefaultModel(savedDefaultModel);
       setDialogs(list);
       const restoredId =
         lastActiveId && list.some((dialog) => dialog.id === lastActiveId)
@@ -281,7 +290,7 @@ export default function ChatScreen() {
     const dialog: Dialog = {
       id: makeId(),
       title: "",
-      model: OPENROUTER_MODEL,
+      model: defaultModel,
       messages: [],
       createdAt: now,
       updatedAt: now,
@@ -332,6 +341,9 @@ export default function ChatScreen() {
   };
 
   const setActiveModel = (id: string) => {
+    // Remember the choice as the default for future new dialogs.
+    setDefaultModel(id);
+    void saveString(DEFAULT_MODEL_STORAGE_KEY, id);
     setDialogs((current) =>
       current.map((dialog) =>
         dialog.id === activeId
