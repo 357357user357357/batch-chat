@@ -69,11 +69,16 @@ function withPromptCache(
   });
 }
 
+export type ReasoningEffort = 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
+
 export type ChatRequestOptions = {
   /** OpenRouter model id, e.g. "openai/gpt-4o-mini" or your custom model alias. */
   model: string;
   temperature?: number;
   max_tokens?: number;
+  /** Thinking budget via OpenRouter's unified reasoning parameter.
+   *  'none' disables reasoning; the others set the effort level. */
+  reasoning?: ReasoningEffort;
   timeoutMs?: number;
   signal?: AbortSignal;
 };
@@ -242,6 +247,14 @@ async function requestWithTimeout(
         messages: withPromptCache(messages, await getCacheDurationSeconds()),
         temperature: options.temperature,
         max_tokens: options.max_tokens,
+        ...(options.reasoning
+          ? {
+              reasoning:
+                options.reasoning === 'none'
+                  ? { enabled: false }
+                  : { effort: options.reasoning },
+            }
+          : {}),
         ...(flex ? { service_tier: 'flex' as const } : {}),
       }),
       signal: localSignal,

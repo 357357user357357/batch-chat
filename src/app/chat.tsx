@@ -30,6 +30,7 @@ import {
     formatQuestionLatex,
     OPENROUTER_MODEL,
     type OpenRouterMessage,
+    type ReasoningEffort,
 } from "@/services/openrouter";
 import { loadJSON, loadString, saveJSON, saveString } from "@/services/storage";
 import {
@@ -50,6 +51,7 @@ function isNetworkError(error: unknown): boolean {
 
 const DIALOGS_STORAGE_KEY = "openrouter.dialogs.v1";
 const ACTIVE_DIALOG_STORAGE_KEY = "openrouter.active-dialog.v1";
+const REASONING_STORAGE_KEY = "openrouter.reasoning-effort.v1";
 const LEGACY_STORAGE_KEY = "openrouter.chat.v1";
 /** Hard ceiling on how many messages are kept / persisted per dialog. */
 const MAX_MESSAGES = 120;
@@ -140,6 +142,9 @@ export default function ChatScreen() {
   const [sending, setSending] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
+  // Reasoning effort (thinking budget): '' = model default. Cycled by the
+  // 🧠 chip in the composer and persisted across app restarts.
+  const [reasoning, setReasoning] = useState<ReasoningEffort | "">("");
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -155,6 +160,7 @@ export default function ChatScreen() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
+      const savedReasoning = await loadString(REASONING_STORAGE_KEY);
       let list = await loadJSON<Dialog[] | null>(DIALOGS_STORAGE_KEY, null);
       if (!Array.isArray(list)) {
         list = [];
@@ -180,6 +186,13 @@ export default function ChatScreen() {
       }
       const lastActiveId = await loadString(ACTIVE_DIALOG_STORAGE_KEY);
       if (cancelled) return;
+      if (
+        savedReasoning === "none" || savedReasoning === "low" ||
+        savedReasoning === "medium" || savedReasoning === "high" ||
+        savedReasoning === "xhigh" || savedReasoning === "max"
+      ) {
+        setReasoning(savedReasoning);
+      }
       setDialogs(list);
       const restoredId =
         lastActiveId && list.some((dialog) => dialog.id === lastActiveId)
@@ -203,6 +216,21 @@ export default function ChatScreen() {
     if (!hydrated) return;
     void saveString(ACTIVE_DIALOG_STORAGE_KEY, activeId ?? "");
   }, [activeId, hydrated]);
+
+  // Persist the reasoning effort so it survives app restarts.
+  useEffect(() => {
+    if (!hydrated) return;
+    void saveString(REASONING_STORAGE_KEY, reasoning);
+  }, [reasoning, hydrated]);
+
+  /** 🧠 chip: cycle Default → None → Low → Medium → High → XHigh → Max. */
+  const cycleReasoning = () => {
+    const levels: Array<ReasoningEffort | ""> = [
+      "", "none", "low", "medium", "high", "xhigh", "max",
+    ];
+    const next = levels[(levels.indexOf(reasoning) + 1) % levels.length];
+    setReasoning(next);
+  };
 
   // Clear the copy feedback timer when the screen unmounts.
   useEffect(() => {
@@ -421,6 +449,7 @@ export default function ChatScreen() {
 
       const completion = await chat(requestMessages, {
         model,
+        ...(reasoning ? { reasoning } : {}),
         timeoutMs: 120_000,
       });
       const reply = completion.choices?.[0]?.message?.content;
@@ -653,19 +682,35 @@ export default function ChatScreen() {
             </ScrollView>
 
             <View style={styles.composerArea}>
-              <Pressable
-                onPress={() => setModelPickerOpen(true)}
-                hitSlop={8}
-                style={styles.modelButton}
-              >
-                <ThemedText
-                  type="code"
-                  themeColor="textSecondary"
-                  numberOfLines={1}
+              <View style={styles.composerMetaRow}>
+                <Pressable
+                  onPress={() => setModelPickerOpen(true)}
+                  hitSlop={8}
+                  style={styles.modelButton}
                 >
-                  {t("models.selected", { model })}
-                </ThemedText>
-              </Pressable>
+                  <ThemedText
+                    type="code"
+                    themeColor="textSecondary"
+                    numberOfLines={1}
+                  >
+                    {t("models.selected", { model })}
+                  </ThemedText>
+                </Pressable>
+                <Pressable
+                  onPress={cycleReasoning}
+                  hitSlop={8}
+                  style={styles.reasoningChip}
+                  accessibilityRole="button"
+                  accessibilityLabel="Cycle reasoning effort"
+                >
+                  <ThemedText
+                    type="code"
+                    themeColor={reasoning ? "text" : "textSecondary"}
+                  >
+                    🧠 {reasoning === "" ? "default" : reasoning}
+                  </ThemedText>
+                </Pressable>
+              </View>
               <View style={styles.composer}>
                 <TextInput
                   value={input}
@@ -971,6 +1016,20 @@ const styles = StyleSheet.create({
   modelButton: {
     alignSelf: "flex-start",
     paddingVertical: 2,
+  },
+  composerMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: Spacing.two,
+  },
+  reasoningChip: {
+    alignSelf: "flex-start",
+    paddingVertical: 2,
+    paddingHorizontal: Spacing.two,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(128,128,128,0.35)",
   },
   composer: {
     flexDirection: "row",
