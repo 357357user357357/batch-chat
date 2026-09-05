@@ -39,6 +39,10 @@ import {
   getCacheDurationSeconds,
   setCacheDurationSeconds,
   type CacheDurationSeconds,
+  DEFAULT_KEEP_ALIVE_HOURS,
+  KEEP_ALIVE_CHOICES,
+  getKeepAliveHours,
+  setKeepAliveHours,
 } from "@/services/cache-settings";
 
 const DEMO_JOBS = [
@@ -85,6 +89,7 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
   const [cacheDuration, setCacheDuration] = useState<CacheDurationSeconds>(
     DEFAULT_CACHE_DURATION_SECONDS,
   );
+  const [keepAlive, setKeepAlive] = useState<number>(DEFAULT_KEEP_ALIVE_HOURS);
 
   const refreshKeyState = useCallback(async () => {
     setEnvKey(getEnvApiKey());
@@ -99,6 +104,7 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
   useEffect(() => {
     void (async () => {
       setCacheDuration(await getCacheDurationSeconds());
+      setKeepAlive(await getKeepAliveHours());
     })();
   }, []);
 
@@ -155,6 +161,11 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
   const selectCacheDuration = async (seconds: CacheDurationSeconds) => {
     setCacheDuration(seconds);
     await setCacheDurationSeconds(seconds);
+  };
+
+  const selectKeepAliveHours = async (hours: number) => {
+    setKeepAlive(hours);
+    await setKeepAliveHours(hours);
   };
 
   const handleTestTavily = async () => {
@@ -418,6 +429,33 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
             {t("cache.hours1")}
           </ThemedText>
         </Pressable>
+      </View>
+
+      <ThemedText type="smallBold">{t("cache.keepaliveTitle")}</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {t("cache.keepaliveSubtitle")}
+      </ThemedText>
+      <View style={styles.buttonRow}>
+        {KEEP_ALIVE_CHOICES.map((hours) => (
+          <Pressable
+            key={hours}
+            onPress={() => void selectKeepAliveHours(hours)}
+            style={({ pressed }) => [
+              styles.chip,
+              keepAlive === hours && styles.chipSelected,
+              pressed && styles.buttonDim,
+            ]}
+          >
+            <ThemedText
+              type="small"
+              themeColor={
+                keepAlive === hours ? "backgroundElement" : "textSecondary"
+              }
+            >
+              {hours === 0 ? t("cache.keepaliveOff") : t("cache.hoursN", { n: hours })}
+            </ThemedText>
+          </Pressable>
+        ))}
       </View>
 
       {statusText ? (

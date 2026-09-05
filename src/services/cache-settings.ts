@@ -35,3 +35,30 @@ export async function setCacheDurationSeconds(
 ): Promise<void> {
   await saveJSON(CACHE_SETTINGS_KEY, value);
 }
+
+// ---------------------------------------------------------------------------
+// Cache keep-alive
+//
+// Anthropic/OpenRouter caches have a 1-hour max TTL, but every cache READ
+// refreshes it. After the last real chat request the app can keep sending
+// near-empty pings (history + "." user turn, max_tokens=8) every 45 minutes
+// that hit the cached prefix at ~10% of input cost, keeping replies cheap for
+// `keepAliveHours` after the last real request instead of just one hour.
+// Only meaningful while the app is in the foreground (iOS/Android suspend
+// background timers); on this server the same feature runs 24/7.
+// ---------------------------------------------------------------------------
+
+const KEEP_ALIVE_KEY = "cache.keepalive.v1";
+
+export const KEEP_ALIVE_OFF = 0;
+export const DEFAULT_KEEP_ALIVE_HOURS = 3;
+export const KEEP_ALIVE_CHOICES = [0, 2, 3, 6, 12, 24];
+
+export async function getKeepAliveHours(): Promise<number> {
+  const value = await loadJSON<number | null>(KEEP_ALIVE_KEY, null);
+  return typeof value === "number" && value >= 0 ? value : DEFAULT_KEEP_ALIVE_HOURS;
+}
+
+export async function setKeepAliveHours(hours: number): Promise<void> {
+  await saveJSON(KEEP_ALIVE_KEY, hours);
+}

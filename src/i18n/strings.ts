@@ -98,6 +98,11 @@ const en = {
     "How long reused prompt text stays cached (applies to chat and batches).",
   "cache.minutes5": "5 minutes",
   "cache.hours1": "1 hour",
+  "cache.keepaliveTitle": "Cache keep-alive",
+  "cache.keepaliveSubtitle":
+    "Keeps the 1-hour cache warm after a chat with near-empty pings every 45 min (~10% of input cost), while the app is open.",
+  "cache.keepaliveOff": "Off",
+  "cache.hoursN": "{n} h",
 
   "backup.title": "Backup & move to a new phone",
   "backup.subtitle":
