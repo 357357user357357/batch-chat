@@ -396,7 +396,7 @@ export async function formatQuestionLatex(
       },
       { role: "user", content: question },
     ],
-    { model, temperature: 0, max_tokens: 2000, timeoutMs: 30_000 },
+    { model, temperature: 0, reasoning: "none", timeoutMs: 45_000 },
   );
 
   const corrected = completion.choices?.[0]?.message?.content ?? "";

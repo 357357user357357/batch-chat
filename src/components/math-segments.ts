@@ -54,6 +54,13 @@ const BARE_SYMBOLS = [
   "zeta", "eta", "theta", "vartheta", "iota", "kappa", "lambda",
   "mu", "nu", "xi", "rho", "varrho", "sigma", "tau", "upsilon",
   "phi", "varphi", "chi", "psi", "omega",
+  "pi", "varpi", "varsigma", "imath", "jmath",
+  "oplus", "ominus", "otimes", "oslash", "odot",
+  "vee", "wedge", "neg", "top", "bot", "star", "ast",
+  "lceil", "rceil", "lfloor", "rfloor", "langle", "rangle",
+  "perp", "parallel", "mid",
+  "arcsin", "arccos", "arctan", "sinh", "cosh", "tanh", "coth",
+  "deg", "bmod", "pmod",
   "Gamma", "Delta", "Theta", "Lambda", "Xi", "Pi", "Sigma",
   "Upsilon", "Phi", "Psi", "Omega",
   "sin", "cos", "tan", "cot", "sec", "csc",
@@ -80,9 +87,12 @@ const BARE_SYMBOL_SET = new Set(BARE_SYMBOLS);
 const MACRO_PATTERN =
   /\\[a-zA-Z]+\*?(?:\{(?:[^{}]|\{[^{}]*\})*\})*(?:[_^](?:\{(?:[^{}]|\{[^{}]*\})*\}|\\[a-zA-Z]+|[^\s{}]))*/;
 
-/** Bare exponents typed without a command: `x^2`, `(a+b)^2`, `e^{-x}`, `e^\infty`. */
+/** Bare sub/superscripts typed without a command: `x^2`, `x_i^2` (both scripts
+ *  in either order), `a_{n}`, `e^{-x}`, `e^\infty`, `10^{-3}`. Previously only
+ *  `^` was recognized, so a question like `x_i^2` was wrapped as `x_$i^2$` —
+ *  the subscript stayed as plain text and the formula rendered broken. */
 const BARE_EXPONENT_PATTERN =
-  /(?:[A-Za-z0-9\]]|\([^()]*\))\^(?:\{[^{}]+\}|\\[a-zA-Z]+|-?[A-Za-z0-9]+)/;
+  /(?:[A-Za-z0-9\]]+|\([^()]*\))(?:[_^](?:\{[^{}]+\}|\\[a-zA-Z]+|-?[A-Za-z0-9]+)){1,2}/;
 
 /** A whole `\begin{…} … \end{…}` block, rendered as display math. */
 const ENVIRONMENT_PATTERN = /\\begin\{[^{}]*\}[\s\S]*?\\end\{[^{}]*\}/g;
@@ -133,6 +143,26 @@ function findMathAtoms(text: string): MathAtom[] {
     if (value[0] === "\\") {
       const bare = !/[{}_^]/.test(value);
       if (bare && !BARE_SYMBOL_SET.has(commandName(value))) continue;
+    } else {
+      // Bare sub/superscript: only when it starts a word (the previous char is
+      // not a letter/digit/underscore), so identifiers glued to the base are
+      // not swallowed as math.
+      const prev = text[match.index - 1];
+      if (prev && /[A-Za-z0-9_]/.test(prev)) continue;
+      // snake_case guard: `file_name` / `app_v2` (multi-letter base + a bare
+      // word after `_`) is an identifier, not math. Single-letter bases with
+      // `_` (`x_i`, `m_2`) or braced/command scripts (`a_{n}`) stay math.
+      if (value.includes("_")) {
+        const base = /^[A-Za-z0-9\]]+/.exec(value)?.[0] ?? "";
+        const script = /_(?:\{[^{}]+\}|\\[a-zA-Z]+|-?[A-Za-z0-9]+)/.exec(value)?.[0] ?? "";
+        if (
+          base.length > 1 &&
+          /[A-Za-z]/.test(base) &&
+          /^[A-Za-z]/.test(script.slice(1))
+        ) {
+          continue;
+        }
+      }
     }
     atoms.push({
       start: match.index,
@@ -186,6 +216,13 @@ function rebuild(text: string, runs: MathAtom[]): string {
  * (`Compute $\int x\,dx$ plus \frac{1}{2}`) renders both parts correctly.
  */
 export function autoDelimitRawLatex(text: string): string {
+  // An odd number of `$$` means the text was cut off mid-formula (e.g. a
+  // truncated answer). MathJax cannot render the dangling delimiter, and
+  // wrapping bare atoms inside it produced garbage like `$$$…${2` — leave
+  // the text exactly as-is in that case.
+  const displayDelimiters = text.match(/\$\$/g)?.length ?? 0;
+  if (displayDelimiters % 2 !== 0) return text;
+
   const protectedRanges: { start: number; end: number }[] = [];
   for (const match of text.matchAll(MATH_PATTERN)) {
     protectedRanges.push({
