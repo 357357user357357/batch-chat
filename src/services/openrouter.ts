@@ -103,7 +103,7 @@ export type ChatCompletion = {
 
 export type BatchJob = {
   messages: OpenRouterMessage[];
-  options?: Pick<ChatRequestOptions, 'temperature' | 'max_tokens' | 'timeoutMs'>;
+  options?: Pick<ChatRequestOptions, 'temperature' | 'max_tokens' | 'timeoutMs' | 'reasoning'>;
 };
 
 export type BatchConfig = {
@@ -488,6 +488,7 @@ export type OpenRouterBatchRequest = {
     messages: CacheableMessage[];
     temperature?: number;
     max_tokens?: number;
+    reasoning?: { enabled: false } | { effort: ReasoningEffort };
   };
 };
 
@@ -568,6 +569,16 @@ export async function createBatch(
         ? { temperature: job.options.temperature }
         : {}),
       ...(job.options?.max_tokens !== undefined ? { max_tokens: job.options.max_tokens } : {}),
+      // Same unified reasoning parameter as sync chat: 'none' disables
+      // reasoning, the others set the effort level (applies per request).
+      ...(job.options?.reasoning
+        ? {
+            reasoning:
+              job.options.reasoning === 'none'
+                ? ({ enabled: false } as const)
+                : ({ effort: job.options.reasoning } as const),
+          }
+        : {}),
     },
   }));
 

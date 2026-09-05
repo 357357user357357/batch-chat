@@ -32,12 +32,14 @@ import {
   OPENROUTER_BATCH_MODEL,
   waitForBatch,
   type OpenRouterBatch,
+  type ReasoningEffort,
 } from "@/services/openrouter";
 import { loadJSON, loadString, saveJSON, saveString } from "@/services/storage";
 
 const MAX_JOBS = 30;
 const HISTORY_STORAGE_KEY = "openrouter.batches.history.v1";
 const SELECTED_STORAGE_KEY = "openrouter.batches.selected.v1";
+const REASONING_STORAGE_KEY = "openrouter.batches.reasoning.v1";
 
 type HistoryItem = {
   id: string;
@@ -133,6 +135,8 @@ export default function BatchesScreen() {
   };
   const [promptsText, setPromptsText] = useState("");
   const [model, setModel] = useState(OPENROUTER_BATCH_MODEL);
+  // 🧠 reasoning effort for every request in the batch (persisted).
+  const [reasoning, setReasoning] = useState<ReasoningEffort | "">("");
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -199,7 +203,15 @@ export default function BatchesScreen() {
     void (async () => {
       const items = await loadJSON<HistoryItem[]>(HISTORY_STORAGE_KEY, []);
       const savedSelectedId = await loadString(SELECTED_STORAGE_KEY);
+      const savedReasoning = await loadString(REASONING_STORAGE_KEY);
       if (cancelled) return;
+      if (
+        savedReasoning === "none" || savedReasoning === "low" ||
+        savedReasoning === "medium" || savedReasoning === "high" ||
+        savedReasoning === "xhigh" || savedReasoning === "max"
+      ) {
+        setReasoning(savedReasoning);
+      }
       setHistory(items);
       const restoredId =
         savedSelectedId && items.some((item) => item.id === savedSelectedId)
@@ -231,6 +243,21 @@ export default function BatchesScreen() {
     void saveString(SELECTED_STORAGE_KEY, selectedId ?? "");
   }, [selectedId, hydrated]);
 
+  // Persist the reasoning effort so it survives app restarts.
+  useEffect(() => {
+    if (!hydrated) return;
+    void saveString(REASONING_STORAGE_KEY, reasoning);
+  }, [reasoning, hydrated]);
+
+  /** 🧠 chip: cycle Default → None → Low → Medium → High → XHigh → Max. */
+  const cycleReasoning = () => {
+    const levels: Array<ReasoningEffort | ""> = [
+      "", "none", "low", "medium", "high", "xhigh", "max",
+    ];
+    const next = levels[(levels.indexOf(reasoning) + 1) % levels.length];
+    setReasoning(next);
+  };
+
   const handleSubmit = async () => {
     const prompts = promptsText
       .split("\n")
@@ -250,6 +277,7 @@ export default function BatchesScreen() {
       const created = await createBatch(
         prompts.map((content) => ({
           messages: [{ role: "user" as const, content }],
+          ...(reasoning ? { options: { reasoning } } : {}),
         })),
         model.trim(),
       );
@@ -572,6 +600,21 @@ export default function BatchesScreen() {
                 numberOfLines={1}
               >
                 {t("models.selected", { model })}
+              </ThemedText>
+            </Pressable>
+
+            <Pressable
+              onPress={cycleReasoning}
+              hitSlop={8}
+              style={styles.reasoningChip}
+              accessibilityRole="button"
+              accessibilityLabel="Cycle reasoning effort for batch requests"
+            >
+              <ThemedText
+                type="code"
+                themeColor={reasoning ? "text" : "textSecondary"}
+              >
+                🧠 {reasoning === "" ? "default" : reasoning}
               </ThemedText>
             </Pressable>
 
@@ -933,6 +976,14 @@ const styles = StyleSheet.create({
   modelButton: {
     alignSelf: "flex-start",
     paddingVertical: 2,
+  },
+  reasoningChip: {
+    alignSelf: "flex-start",
+    paddingVertical: 2,
+    paddingHorizontal: Spacing.two,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(128,128,128,0.35)",
   },
   submitButton: {
     backgroundColor: "#3c87f7",
