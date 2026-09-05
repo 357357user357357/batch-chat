@@ -25,7 +25,6 @@ import { ThemedView } from "@/components/themed-view";
 import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
-import { scheduleKeepAlive } from "@/services/cache-keeper";
 import {
     chat,
     formatQuestionLatex,
@@ -427,10 +426,8 @@ export default function ChatScreen() {
       const reply = completion.choices?.[0]?.message?.content;
       if (!reply || !reply.trim())
         throw new Error("Empty response from the model.");
-      // Keep the 1-hour prompt cache warm: schedule near-empty pings that
-      // replay the EXACT request messages of this real request (the cached
-      // prefix must match character-for-character).
-      scheduleKeepAlive(`chat-${activeId}-${model}`, model, () => requestMessages);
+      // Cache warm-up is now opt-in only (🔥 Cache toggle on the server web
+      // UI) — no automatic pings from the phone.
       const replyMessage: ChatMessage = {
         id: makeId(),
         role: "assistant",
