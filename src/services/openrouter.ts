@@ -127,10 +127,36 @@ const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 
 /** Cheaper batch model: 50% off the standard price. */
 export const OPENROUTER_BATCH_MODEL =
-  process.env.EXPO_PUBLIC_OPENROUTER_BATCH_MODEL ?? 'anthropic/claude-fable-5:batch';
+  process.env.EXPO_PUBLIC_OPENROUTER_BATCH_MODEL ?? 'anthropic/claude-fable-5.1:batch';
 
 export const OPENROUTER_MODEL =
   process.env.EXPO_PUBLIC_OPENROUTER_MODEL ?? 'deepseek/deepseek-v4-flash-0731';
+
+/**
+ * Processing-tier suffix support (same grammar as the server):
+ *   "vendor/model:flex" → Flex processing tier (service_tier="flex", cheaper /
+ *     slower). If the provider doesn't offer flex for the model (e.g. some
+ *     Astra releases), the request is automatically retried on the standard
+ *     tier — so ":flex" is always safe to append for any future model.
+ */
+const FLEX_SUFFIX = ':flex';
+
+export function splitModelVariant(model: string): { base: string; flex: boolean } {
+  const trimmed = model.trim();
+  if (trimmed.endsWith(FLEX_SUFFIX)) {
+    return { base: trimmed.slice(0, -FLEX_SUFFIX.length), flex: true };
+  }
+  return { base: trimmed, flex: false };
+}
+
+function isFlexUnsupportedError(status: number | undefined, body: unknown): boolean {
+  if (status !== 400) return false;
+  const text =
+    typeof body === 'string'
+      ? body
+      : JSON.stringify(body ?? '').toLowerCase();
+  return text.toLowerCase().includes('service_tier') || text.toLowerCase().includes('flex');
+}
 
 export class OpenRouterError extends Error {
   readonly status: number | undefined;
@@ -204,6 +230,7 @@ async function requestWithTimeout(
         'No OpenRouter API key configured. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
       );
     }
+    const { base, flex } = splitModelVariant(options.model);
     const response = await fetch(OPENROUTER_URL, {
       method: 'POST',
       headers: {
@@ -211,10 +238,11 @@ async function requestWithTimeout(
         Authorization: `Bearer ${key}`,
       },
       body: JSON.stringify({
-        model: options.model,
+        model: base,
         messages: withPromptCache(messages, await getCacheDurationSeconds()),
         temperature: options.temperature,
         max_tokens: options.max_tokens,
+        ...(flex ? { service_tier: 'flex' as const } : {}),
       }),
       signal: localSignal,
     });
@@ -225,6 +253,38 @@ async function requestWithTimeout(
         detail = await response.json();
       } catch {
         detail = await response.text();
+      }
+      // Flex tier not available for this model → retry on the standard tier
+      if (flex && isFlexUnsupportedError(response.status, detail)) {
+        const retry = await fetch(OPENROUTER_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model: base,
+            messages: withPromptCache(messages, await getCacheDurationSeconds()),
+            temperature: options.temperature,
+            max_tokens: options.max_tokens,
+          }),
+          signal: localSignal,
+        });
+        if (!retry.ok) {
+          let retryDetail: unknown;
+          try {
+            retryDetail = await retry.json();
+          } catch {
+            retryDetail = await retry.text();
+          }
+          throw new OpenRouterError(
+            `OpenRouter request failed with HTTP ${retry.status}`,
+            retry.status,
+            retryDetail
+          );
+        }
+        const retryRaw = await retry.json();
+        return { ...(retryRaw as ChatCompletion), raw: retryRaw };
       }
       throw new OpenRouterError(
         `OpenRouter request failed with HTTP ${response.status}`,
