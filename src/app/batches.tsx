@@ -14,6 +14,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnimatedPressable } from "@/components/animated-pressable";
 import { BatchDrawer } from "@/components/batch-drawer";
 import { MathAnswer } from "@/components/math-answer";
+import {
+  autoDelimitRawLatex,
+  containsMath,
+} from "@/components/math-segments";
 import { ModelPickerModal } from "@/components/model-picker-modal";
 import { ThemedText } from "@/components/themed-text";
 import { ThemedView } from "@/components/themed-view";
@@ -773,9 +777,18 @@ function BatchCard({
             return (
               <View key={answer.custom_id} style={styles.answerBlock}>
                 <View style={styles.answerPromptRow}>
-                  <ThemedText type="smallBold" style={styles.answerPrompt}>
-                    {prompt}
-                  </ThemedText>
+                  {containsMath(autoDelimitRawLatex(prompt)) ? (
+                    <View style={styles.answerPrompt}>
+                      <MathAnswer
+                        text={autoDelimitRawLatex(prompt)}
+                        fontSize={15}
+                      />
+                    </View>
+                  ) : (
+                    <ThemedText type="smallBold" style={styles.answerPrompt}>
+                      {prompt}
+                    </ThemedText>
+                  )}
                   <Pressable
                     onPress={() => onCopyPrompt(prompt)}
                     style={styles.copyIcon}
@@ -787,7 +800,7 @@ function BatchCard({
                 </View>
                 {answer.ok ? (
                   <>
-                    <MathAnswer text={answer.answer ?? ""} />
+                    <MathAnswer text={autoDelimitRawLatex(answer.answer ?? "")} />
                     <Pressable
                       onPress={() => onCopyAnswer(answer.answer ?? "")}
                       hitSlop={8}

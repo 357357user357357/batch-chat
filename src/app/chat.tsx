@@ -52,6 +52,8 @@ function isNetworkError(error: unknown): boolean {
 const DIALOGS_STORAGE_KEY = "openrouter.dialogs.v1";
 const ACTIVE_DIALOG_STORAGE_KEY = "openrouter.active-dialog.v1";
 const REASONING_STORAGE_KEY = "openrouter.reasoning-effort.v1";
+/** Flex processing-tier toggle (🧊 chip): appends `:flex` to the model on send. */
+const FLEX_STORAGE_KEY = "openrouter.flex-mode.v1";
 const LEGACY_STORAGE_KEY = "openrouter.chat.v1";
 /** Hard ceiling on how many messages are kept / persisted per dialog. */
 const MAX_MESSAGES = 120;
@@ -145,6 +147,9 @@ export default function ChatScreen() {
   // Reasoning effort (thinking budget): '' = model default. Cycled by the
   // 🧠 chip in the composer and persisted across app restarts.
   const [reasoning, setReasoning] = useState<ReasoningEffort | "">("");
+  // Flex processing tier (like the web UI's 🧊 Flex): cheaper/slower; the
+  // service falls back to the standard tier automatically when unsupported.
+  const [flexOn, setFlexOn] = useState(false);
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [search, setSearch] = useState("");
@@ -193,6 +198,9 @@ export default function ChatScreen() {
       ) {
         setReasoning(savedReasoning);
       }
+      const savedFlex = await loadString(FLEX_STORAGE_KEY);
+      if (cancelled) return;
+      if (savedFlex === "1") setFlexOn(true);
       setDialogs(list);
       const restoredId =
         lastActiveId && list.some((dialog) => dialog.id === lastActiveId)
@@ -222,6 +230,12 @@ export default function ChatScreen() {
     if (!hydrated) return;
     void saveString(REASONING_STORAGE_KEY, reasoning);
   }, [reasoning, hydrated]);
+
+  // Persist the Flex toggle so it survives app restarts.
+  useEffect(() => {
+    if (!hydrated) return;
+    void saveString(FLEX_STORAGE_KEY, flexOn ? "1" : "0");
+  }, [flexOn, hydrated]);
 
   /** 🧠 chip: cycle Default → None → Low → Medium → High → XHigh → Max. */
   const cycleReasoning = () => {
@@ -448,7 +462,7 @@ export default function ChatScreen() {
       ];
 
       const completion = await chat(requestMessages, {
-        model,
+        model: flexOn ? `${model}:flex` : model,
         ...(reasoning ? { reasoning } : {}),
         timeoutMs: 120_000,
       });
@@ -696,20 +710,36 @@ export default function ChatScreen() {
                     {t("models.selected", { model })}
                   </ThemedText>
                 </Pressable>
-                <Pressable
-                  onPress={cycleReasoning}
-                  hitSlop={8}
-                  style={styles.reasoningChip}
-                  accessibilityRole="button"
-                  accessibilityLabel="Cycle reasoning effort"
-                >
-                  <ThemedText
-                    type="code"
-                    themeColor={reasoning ? "text" : "textSecondary"}
+                <View style={styles.chipsRow}>
+                  <Pressable
+                    onPress={cycleReasoning}
+                    hitSlop={8}
+                    style={styles.reasoningChip}
+                    accessibilityRole="button"
+                    accessibilityLabel="Cycle reasoning effort"
                   >
-                    🧠 {reasoning === "" ? "default" : reasoning}
-                  </ThemedText>
-                </Pressable>
+                    <ThemedText
+                      type="code"
+                      themeColor={reasoning ? "text" : "textSecondary"}
+                    >
+                      🧠 {reasoning === "" ? "default" : reasoning}
+                    </ThemedText>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => setFlexOn((current) => !current)}
+                    hitSlop={8}
+                    style={styles.reasoningChip}
+                    accessibilityRole="button"
+                    accessibilityLabel="Toggle Flex processing tier"
+                  >
+                    <ThemedText
+                      type="code"
+                      themeColor={flexOn ? "text" : "textSecondary"}
+                    >
+                      🧊 {flexOn ? "flex" : "standard"}
+                    </ThemedText>
+                  </Pressable>
+                </View>
               </View>
               <View style={styles.composer}>
                 <TextInput
@@ -1022,6 +1052,11 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     gap: Spacing.two,
+  },
+  chipsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.one,
   },
   reasoningChip: {
     alignSelf: "flex-start",
