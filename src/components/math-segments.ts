@@ -13,6 +13,11 @@ export type MathSegment = { kind: "text" | "math"; value: string };
 const MATH_PATTERN =
   /(\$\$[\s\S]{1,4000}?\$\$|\\\[[\s\S]{1,4000}?\\\]|\\\([\s\S]{1,400}?\\\)|\$[^\s$](?:[^$]{0,398}[^\s$])?\$)/g;
 
+/** ASCII power notation typed like code: `X**2`, `2**10`, `a**(n+1)`. Models
+ *  occasionally answer with Python-style powers; converted to `base^{exp}`. */
+const ASCII_POWER_PATTERN =
+  /(^|[^A-Za-z0-9_*\\])((?:[A-Za-z0-9\]]+|\([^()\n]+\))\*\*(?:[A-Za-z0-9]+|\([^()\n]+\)))/g;
+
 export function splitMathSegments(text: string): MathSegment[] {
   const segments: MathSegment[] = [];
   let lastIndex = 0;
@@ -108,7 +113,7 @@ const FRAGMENT_PATTERN = new RegExp(
   "g",
 );
 
-type MathAtom = { start: number; end: number; display: boolean };
+type MathAtom = { start: number; end: number; display: boolean; value?: string };
 
 function commandName(source: string): string {
   const match = /^\\([a-zA-Z]+)/.exec(source);
@@ -130,6 +135,18 @@ function findMathAtoms(text: string): MathAtom[] {
       start: match.index,
       end: match.index + match[0].length,
       display: true,
+    });
+  }
+
+  // ASCII powers (`X**2` → `X^{2}`) as pre-converted atoms.
+  for (const match of text.matchAll(ASCII_POWER_PATTERN)) {
+    const start = match.index + match[1].length;
+    const raw = match[2];
+    atoms.push({
+      start,
+      end: start + raw.length,
+      display: false,
+      value: raw.replace(/\*\*((?:[A-Za-z0-9]+|\([^()]+\)))/g, "^{$1}"),
     });
   }
 
@@ -184,6 +201,12 @@ function mergeAtoms(atoms: MathAtom[], text: string): MathAtom[] {
       !atom.display &&
       isConnector(text.slice(last.end, atom.start))
     ) {
+      const gap = text.slice(last.end, atom.start);
+      if (last.value !== undefined || atom.value !== undefined) {
+        last.value =
+          (last.value ?? text.slice(last.start, last.end)) + gap +
+          (atom.value ?? text.slice(atom.start, atom.end));
+      }
       last.end = atom.end;
     } else {
       runs.push({ ...atom });
@@ -197,7 +220,7 @@ function rebuild(text: string, runs: MathAtom[]): string {
   let lastIndex = 0;
   for (const run of runs) {
     out += text.slice(lastIndex, run.start);
-    const content = text.slice(run.start, run.end);
+    const content = run.value ?? text.slice(run.start, run.end);
     out += run.display ? `$$${content}$$` : `$${content}$`;
     lastIndex = run.end;
   }
