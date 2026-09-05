@@ -91,7 +91,8 @@ async function ping(key: string, entry: KeepAliveEntry): Promise<void> {
     await chat(messages, {
       model: entry.model,
       max_tokens: PING_MAX_TOKENS,
-      timeoutMs: 30_000,
+      // Flex processing is slower — give those pings more headroom.
+      timeoutMs: entry.model.endsWith(":flex") ? 90_000 : 30_000,
     });
   } catch {
     // A failed ping must never surface in the UI; stop retrying this entry
