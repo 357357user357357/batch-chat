@@ -163,6 +163,23 @@ function isFlexUnsupportedError(status: number | undefined, body: unknown): bool
   return text.toLowerCase().includes('service_tier') || text.toLowerCase().includes('flex');
 }
 
+/** OpenRouter rejected the reasoning param for this model (e.g. astra:
+ *  "Reasoning is mandatory for this endpoint and cannot be disabled"). */
+function isReasoningUnsupportedError(status: number | undefined, body: unknown): boolean {
+  if (status !== 400) return false;
+  const text =
+    typeof body === 'string'
+      ? body.toLowerCase()
+      : JSON.stringify(body ?? '').toLowerCase();
+  return (
+    text.includes('reasoning') &&
+    (text.includes('cannot be disabled') ||
+      text.includes('not supported') ||
+      text.includes('mandatory') ||
+      text.includes('does not support'))
+  );
+}
+
 export class OpenRouterError extends Error {
   readonly status: number | undefined;
   readonly body: unknown;
@@ -280,6 +297,40 @@ async function requestWithTimeout(
             messages: withPromptCache(messages, await getCacheDurationSeconds()),
             temperature: options.temperature,
             max_tokens: options.max_tokens,
+          }),
+          signal: localSignal,
+        });
+        if (!retry.ok) {
+          let retryDetail: unknown;
+          try {
+            retryDetail = await retry.json();
+          } catch {
+            retryDetail = await retry.text();
+          }
+          throw new OpenRouterError(
+            `OpenRouter request failed with HTTP ${retry.status}`,
+            retry.status,
+            retryDetail
+          );
+        }
+        const retryRaw = await retry.json();
+        return { ...(retryRaw as ChatCompletion), raw: retryRaw };
+      }
+      // Reasoning param rejected (model can't disable / doesn't support it)
+      // → retry once without it (model default applies).
+      if (options.reasoning && isReasoningUnsupportedError(response.status, detail)) {
+        const retry = await fetch(OPENROUTER_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${key}`,
+          },
+          body: JSON.stringify({
+            model: base,
+            messages: withPromptCache(messages, await getCacheDurationSeconds()),
+            temperature: options.temperature,
+            max_tokens: options.max_tokens,
+            ...(flex ? { service_tier: 'flex' as const } : {}),
           }),
           signal: localSignal,
         });
