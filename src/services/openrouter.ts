@@ -130,7 +130,7 @@ export const OPENROUTER_BATCH_MODEL =
   process.env.EXPO_PUBLIC_OPENROUTER_BATCH_MODEL ?? 'anthropic/claude-fable-5.1:batch';
 
 export const OPENROUTER_MODEL =
-  process.env.EXPO_PUBLIC_OPENROUTER_MODEL ?? 'deepseek/deepseek-v4-flash-0731';
+  process.env.EXPO_PUBLIC_OPENROUTER_MODEL ?? '~deepseek/deepseek-v4-flash-latest';
 
 /**
  * Processing-tier suffix support (same grammar as the server):
