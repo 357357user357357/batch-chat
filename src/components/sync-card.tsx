@@ -16,6 +16,7 @@ import { useI18n } from "@/i18n";
 import {
   getSyncSettings,
   pairDevice,
+  parsePairingCode,
   runSync,
   unpairDevice,
   type SyncSettings,
@@ -55,11 +56,16 @@ export function SyncCard() {
   }, [t, refresh]);
 
   const handlePair = async () => {
-    if (!serverUrl.trim() || !password) return;
+    // A full pairing code ("https://host|id|key") carries the server address:
+    // auto-fill the URL field when the user only pasted the code.
+    const parsed = parsePairingCode(password);
+    const effectiveUrl = serverUrl.trim() || parsed.serverUrl || "";
+    if (parsed.serverUrl && !serverUrl.trim()) setServerUrl(parsed.serverUrl);
+    if (!effectiveUrl || !password) return;
     setBusy("pairing");
     setStatusText("");
     try {
-      await pairDevice(serverUrl, password);
+      await pairDevice(effectiveUrl, password);
       setPassword("");
       await refresh();
       // Immediately push/pull so the freshly-paired device is up to date.
@@ -206,7 +212,11 @@ export function SyncCard() {
             ]}
           />
           <Pressable
-            disabled={busy !== "idle" || !serverUrl.trim() || !password}
+            disabled={
+              busy !== "idle" ||
+              !password ||
+              !(serverUrl.trim() || parsePairingCode(password).serverUrl)
+            }
             onPress={handlePair}
             style={({ pressed }) => [
               styles.button,

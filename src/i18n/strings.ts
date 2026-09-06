@@ -125,7 +125,7 @@ const en = {
   "sync.subtitle":
     "Link this phone to your batch-chat-server (same address & password as the web UI) to keep chats and batches in sync across PCs and phones.",
   "sync.serverPlaceholder": "https://myserver.example.com",
-  "sync.passwordPlaceholder": "Server password",
+  "sync.passwordPlaceholder": "Password or pairing code",
   "sync.pair": "Pair device",
   "sync.pairing": "Pairing…",
   "sync.pairFail": "Could not pair",

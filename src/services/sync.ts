@@ -148,23 +148,64 @@ export async function getSyncSettings(): Promise<SyncSettings | null> {
   return loadJSON<SyncSettings | null>(SYNC_SETTINGS_KEY, null);
 }
 
-/** Pairs this device with a server, the same way the web UI logs in. */
-export async function pairDevice(serverUrl: string, password: string): Promise<void> {
-  const base = normalizeServerUrl(serverUrl);
+/**
+ * A pasted pairing code may carry the server origin with it:
+ * "https://host|account-id|account-key" (copied from the web Settings).
+ * Plain passwords and bare "id|key" codes pass through untouched.
+ */
+export function parsePairingCode(secret: string): { serverUrl: string | null; code: string } {
+  const parts = secret.trim().split("|").filter((p) => p.length > 0);
+  if (parts.length === 3) return { serverUrl: parts[0], code: `${parts[1]}|${parts[2]}` };
+  return { serverUrl: null, code: secret.trim() };
+}
+
+/**
+ * Pairs this device with a server. The secret field accepts EITHER the
+ * login password OR the account pairing code (account_id|account_key,
+ * optionally prefixed with the server origin) — the code is tried first,
+ * the password login is the fallback, so both old and new flows work.
+ */
+export async function pairDevice(serverUrl: string, secret: string): Promise<void> {
+  const parsed = parsePairingCode(secret);
+  const base = normalizeServerUrl(serverUrl || parsed.serverUrl || "");
   if (!base) {
     throw new Error("Enter the server address (e.g. https://myserver.example.com).");
   }
+  let token: string | null = null;
+  const pairResp = await fetchWithTimeout(`${base}/api/auth/pair`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ code: parsed.code }),
+  });
+  if (pairResp.ok) {
+    token = ((await pairResp.json()) as { token: string }).token;
+  } else if (pairResp.status === 404 || pairResp.status === 405) {
+    // Older server without the pairing endpoint — plain password login.
+    token = await passwordLogin(base, parsed.code);
+  } else if (pairResp.status === 401) {
+    // Maybe the user typed the password into the same field — try it.
+    token = await passwordLogin(base, parsed.code);
+  } else {
+    throw new Error(`Server error (HTTP ${pairResp.status}).`);
+  }
+  const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null };
+  await saveJSON(SYNC_SETTINGS_KEY, settings);
+}
+
+async function passwordLogin(base: string, password: string): Promise<string> {
   const resp = await fetchWithTimeout(`${base}/api/auth/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
   });
   if (!resp.ok) {
-    throw new Error(resp.status === 401 ? "Wrong password." : `Server error (HTTP ${resp.status}).`);
+    throw new Error(
+      resp.status === 401
+        ? "Invalid pairing code or wrong password."
+        : `Server error (HTTP ${resp.status}).`,
+    );
   }
-  const data = (await resp.json()) as { token: string };
-  const settings: SyncSettings = { serverUrl: base, token: data.token, lastSyncAt: null };
-  await saveJSON(SYNC_SETTINGS_KEY, settings);
+  return ((await resp.json()) as { token: string }).token;
 }
 
 export async function unpairDevice(): Promise<void> {
