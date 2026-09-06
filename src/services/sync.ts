@@ -60,6 +60,38 @@ export type SyncSettings = {
   lastSyncAt: string | null;
 };
 
+import * as Device from "expo-device";
+
+import { loadString, saveString } from "@/services/storage";
+
+const DEVICE_NAME_STORAGE_KEY = "sync.deviceName";
+let cachedDeviceName: string | null = null;
+
+/**
+ * Stable, generic per-install device label for the master server's audit
+ * trail — derived from the real model (e.g. "Redmi Note 9T" ->
+ * "redmi-note-9t-x7k2") with a random suffix so multiple phones of the same
+ * model are distinguishable. No specific device is ever hardcoded.
+ */
+export async function getDeviceName(): Promise<string> {
+  if (cachedDeviceName) return cachedDeviceName;
+  const stored = await loadString(DEVICE_NAME_STORAGE_KEY);
+  if (stored) {
+    cachedDeviceName = stored;
+    return stored;
+  }
+  const model =
+    (Device.modelName ?? Device.deviceName ?? "phone")
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "phone";
+  const suffix = Math.random().toString(36).slice(2, 6);
+  const name = `${model}-${suffix}`.slice(0, 40);
+  await saveString(DEVICE_NAME_STORAGE_KEY, name);
+  cachedDeviceName = name;
+  return name;
+}
+
 type SyncSnapshot = { dialogIds: string[]; batchIds: string[] };
 
 type PulledConversation = {
@@ -257,12 +289,13 @@ export async function runSync(): Promise<SyncSummary> {
   const previousIds = new Set([...(snapshot?.dialogIds ?? []), ...(snapshot?.batchIds ?? [])]);
   const deletedIds = [...previousIds].filter((id) => !currentIds.has(id));
 
+  const deviceName = await getDeviceName();
   const headers = {
     "Content-Type": "application/json",
     Authorization: `Bearer ${settings.token}`,
     // Audit trail on the master server: which device created/modified/deleted
-    // each synced record.
-    "X-Device-Name": "redmi-note-9t",
+    // each synced record. Generic per-install name (model + random suffix).
+    "X-Device-Name": deviceName,
   };
 
   // Offer this device's provider keys so the server can adopt any it lacks
