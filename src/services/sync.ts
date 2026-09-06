@@ -148,6 +148,23 @@ export async function getSyncSettings(): Promise<SyncSettings | null> {
   return loadJSON<SyncSettings | null>(SYNC_SETTINGS_KEY, null);
 }
 
+// ------------------------------------------------------------- remember me
+
+type RememberedCredentials = { login: string; password: string };
+
+const REMEMBER_KEY = "sync.rememberCredentials";
+
+/** Login+password kept on the device when "Remember" is checked (null = off). */
+export async function getRememberedCredentials(): Promise<RememberedCredentials | null> {
+  return loadJSON<RememberedCredentials | null>(REMEMBER_KEY, null);
+}
+
+export async function saveRememberedCredentials(
+  credentials: RememberedCredentials | null,
+): Promise<void> {
+  await saveJSON(REMEMBER_KEY, credentials);
+}
+
 /**
  * A pasted pairing code may carry the server origin with it:
  * "https://host|account-id|account-key" (copied from the web Settings).
@@ -160,36 +177,90 @@ export function parsePairingCode(secret: string): { serverUrl: string | null; co
 }
 
 /**
- * Pairs this device with a server. The secret field accepts EITHER the
- * login password OR the account pairing code (account_id|account_key,
- * optionally prefixed with the server origin) — the code is tried first,
- * the password login is the fallback, so both old and new flows work.
+ * Pairs this device with a server. Three accepted credentials, tried in
+ * order: a pairing code (account_id|account_key, optionally prefixed with
+ * the server origin), a login+password combination (when `login` is given),
+ * or a plain master password (legacy fallback).
  */
-export async function pairDevice(serverUrl: string, secret: string): Promise<void> {
+export async function pairDevice(
+  serverUrl: string,
+  secret: string,
+  login?: string,
+): Promise<void> {
   const parsed = parsePairingCode(secret);
   const base = normalizeServerUrl(serverUrl || parsed.serverUrl || "");
   if (!base) {
     throw new Error("Enter the server address (e.g. https://myserver.example.com).");
   }
   let token: string | null = null;
-  const pairResp = await fetchWithTimeout(`${base}/api/auth/pair`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ code: parsed.code }),
-  });
-  if (pairResp.ok) {
-    token = ((await pairResp.json()) as { token: string }).token;
-  } else if (pairResp.status === 404 || pairResp.status === 405) {
-    // Older server without the pairing endpoint — plain password login.
-    token = await passwordLogin(base, parsed.code);
-  } else if (pairResp.status === 401) {
-    // Maybe the user typed the password into the same field — try it.
-    token = await passwordLogin(base, parsed.code);
+  if (login && login.trim()) {
+    // Login + password path (client accounts).
+    token = await loginWith(base, login.trim(), parsed.code);
   } else {
-    throw new Error(`Server error (HTTP ${pairResp.status}).`);
+    const pairResp = await fetchWithTimeout(`${base}/api/auth/pair`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: parsed.code }),
+    });
+    if (pairResp.ok) {
+      token = ((await pairResp.json()) as { token: string }).token;
+    } else if (pairResp.status === 404 || pairResp.status === 405) {
+      // Older server without the pairing endpoint — plain password login.
+      token = await passwordLogin(base, parsed.code);
+    } else if (pairResp.status === 401) {
+      // Maybe the user typed the password into the same field — try it.
+      token = await passwordLogin(base, parsed.code);
+    } else {
+      throw new Error(`Server error (HTTP ${pairResp.status}).`);
+    }
   }
   const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null };
   await saveJSON(SYNC_SETTINGS_KEY, settings);
+}
+
+/** Self-service registration: unique login + mandatory password. */
+export async function registerAccount(
+  serverUrl: string,
+  login: string,
+  password: string,
+): Promise<void> {
+  const base = normalizeServerUrl(serverUrl);
+  if (!base) {
+    throw new Error("Enter the server address (e.g. https://myserver.example.com).");
+  }
+  const resp = await fetchWithTimeout(`${base}/api/auth/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login: login.trim(), password }),
+  });
+  if (!resp.ok) {
+    let detail = `Server error (HTTP ${resp.status}).`;
+    try {
+      const data = (await resp.json()) as { detail?: string };
+      if (data.detail) detail = data.detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  const token = ((await resp.json()) as { token: string }).token;
+  const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null };
+  await saveJSON(SYNC_SETTINGS_KEY, settings);
+}
+
+async function loginWith(base: string, login: string, password: string): Promise<string> {
+  const resp = await fetchWithTimeout(`${base}/api/auth/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ login, password }),
+  });
+  if (!resp.ok) {
+    let detail = resp.status === 401 ? "Wrong login or password." : `Server error (HTTP ${resp.status}).`;
+    try {
+      const data = (await resp.json()) as { detail?: string };
+      if (data.detail) detail = data.detail;
+    } catch {}
+    throw new Error(detail);
+  }
+  return ((await resp.json()) as { token: string }).token;
 }
 
 async function passwordLogin(base: string, password: string): Promise<string> {
@@ -211,6 +282,7 @@ async function passwordLogin(base: string, password: string): Promise<string> {
 export async function unpairDevice(): Promise<void> {
   await saveJSON(SYNC_SETTINGS_KEY, null);
   await saveJSON(SYNC_SNAPSHOT_KEY, null);
+  await saveRememberedCredentials(null);
 }
 
 export type SyncSummary = { pushed: number; pulled: number };

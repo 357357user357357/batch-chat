@@ -14,22 +14,29 @@ import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
 import {
+  getRememberedCredentials,
   getSyncSettings,
   pairDevice,
   parsePairingCode,
+  registerAccount,
   runSync,
+  saveRememberedCredentials,
   unpairDevice,
   type SyncSettings,
 } from "@/services/sync";
 
 type Busy = "idle" | "pairing" | "syncing";
+type Mode = "pair" | "register";
 
 export function SyncCard() {
   const theme = useTheme();
   const { t } = useI18n();
   const [settings, setSettings] = useState<SyncSettings | null>(null);
   const [serverUrl, setServerUrl] = useState("");
+  const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
+  const [mode, setMode] = useState<Mode>("pair");
   const [busy, setBusy] = useState<Busy>("idle");
   const [statusText, setStatusText] = useState("");
 
@@ -65,7 +72,12 @@ export function SyncCard() {
     setBusy("pairing");
     setStatusText("");
     try {
-      await pairDevice(effectiveUrl, password);
+      await pairDevice(effectiveUrl, password, login);
+      if (remember && login.trim()) {
+        await saveRememberedCredentials({ login: login.trim(), password });
+      } else {
+        await saveRememberedCredentials(null);
+      }
       setPassword("");
       await refresh();
       // Immediately push/pull so the freshly-paired device is up to date.
@@ -73,6 +85,34 @@ export function SyncCard() {
         await performSync();
       } catch {
         // Pairing succeeded; a sync error here can be retried via "Sync now".
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      Alert.alert(t("sync.pairFail"), message);
+    } finally {
+      setBusy("idle");
+    }
+  };
+
+  const handleRegister = async () => {
+    const effectiveUrl = serverUrl.trim();
+    if (!effectiveUrl || !login.trim() || password.length < 6) return;
+    setBusy("pairing");
+    setStatusText("");
+    try {
+      await registerAccount(effectiveUrl, login, password);
+      if (remember) {
+        await saveRememberedCredentials({ login: login.trim(), password });
+      } else {
+        await saveRememberedCredentials(null);
+      }
+      setPassword("");
+      setMode("pair");
+      await refresh();
+      try {
+        await performSync();
+      } catch {
+        // Registration succeeded; sync can be retried via "Sync now".
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -110,12 +150,18 @@ export function SyncCard() {
   };
 
   // Auto-sync once on mount when already paired (upload/download over the
-  // internet without needing to tap "Sync now").
+  // internet without needing to tap "Sync now"). Pre-fill remembered
+  // credentials so re-pairing after an expiry is one tap.
   const autoSyncedRef = useRef(false);
   useEffect(() => {
     if (autoSyncedRef.current) return;
     autoSyncedRef.current = true;
     void (async () => {
+      const remembered = await getRememberedCredentials();
+      if (remembered) {
+        setLogin(remembered.login);
+        setRemember(true);
+      }
       const existing = await getSyncSettings();
       if (!existing) return;
       try {
@@ -195,9 +241,31 @@ export function SyncCard() {
             ]}
           />
           <TextInput
+            value={login}
+            onChangeText={setLogin}
+            placeholder={
+              mode === "register"
+                ? t("sync.registerTitle")
+                : t("sync.loginPlaceholder")
+            }
+            placeholderTextColor={theme.textSecondary}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={[
+              styles.input,
+              {
+                color: theme.text,
+                borderColor: theme.backgroundSelected,
+                backgroundColor: theme.background,
+              },
+            ]}
+          />
+          <TextInput
             value={password}
             onChangeText={setPassword}
-            placeholder={t("sync.passwordPlaceholder")}
+            placeholder={
+              mode === "register" ? "Password (min 6 chars)" : t("sync.passwordPlaceholder")
+            }
             placeholderTextColor={theme.textSecondary}
             secureTextEntry
             autoCapitalize="none"
@@ -212,12 +280,21 @@ export function SyncCard() {
             ]}
           />
           <Pressable
+            onPress={() => setRemember(!remember)}
+            style={styles.rememberRow}
+          >
+            <ThemedText type="small" themeColor="textSecondary">
+              {remember ? "☑" : "☐"} {t("sync.remember")}
+            </ThemedText>
+          </Pressable>
+          <Pressable
             disabled={
               busy !== "idle" ||
               !password ||
-              !(serverUrl.trim() || parsePairingCode(password).serverUrl)
+              !(serverUrl.trim() || parsePairingCode(password).serverUrl) ||
+              (mode === "register" && (!login.trim() || password.length < 6))
             }
-            onPress={handlePair}
+            onPress={mode === "register" ? handleRegister : handlePair}
             style={({ pressed }) => [
               styles.button,
               (pressed || busy !== "idle" || !serverUrl.trim() || !password) &&
@@ -228,9 +305,18 @@ export function SyncCard() {
               <ActivityIndicator size="small" color={theme.background} />
             ) : (
               <ThemedText type="smallBold" themeColor="text">
-                {t("sync.pair")}
+                {mode === "register" ? t("sync.registerTitle") : t("sync.pair")}
               </ThemedText>
             )}
+          </Pressable>
+          <Pressable
+            disabled={busy !== "idle"}
+            onPress={() => setMode(mode === "register" ? "pair" : "register")}
+            style={({ pressed }) => [styles.buttonGhost, pressed && styles.buttonDim]}
+          >
+            <ThemedText type="small" themeColor="textSecondary">
+              {mode === "register" ? t("sync.backToLogin") : t("sync.createAccount")}
+            </ThemedText>
           </Pressable>
         </>
       )}
@@ -272,6 +358,9 @@ const styles = StyleSheet.create({
   buttonRow: {
     flexDirection: "row",
     gap: Spacing.two,
+  },
+  rememberRow: {
+    marginTop: -4,
   },
   buttonGhost: {
     flex: 1,
