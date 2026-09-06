@@ -47,6 +47,8 @@ type HistoryItem = {
   model: string;
   prompts: string[];
   createdAt: number;
+  /** Bumped whenever the batch updates — used by the master-server merge. */
+  updatedAt?: number;
   batch: OpenRouterBatch | null;
   error?: string;
   title?: string;
@@ -68,7 +70,12 @@ type PulledConversation = {
   created_at: string | null;
   updated_at: string | null;
   deleted: boolean;
-  messages: { role: string; content: string; model: string | null }[];
+  messages: {
+    role: string;
+    content: string;
+    model: string | null;
+    created_at?: string | null;
+  }[];
 };
 
 let idCounter = 0;
@@ -152,11 +159,16 @@ function conversationToDialog(conv: PulledConversation): Dialog {
     model: conv.model || "",
     messages: conv.messages
       .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({
-        id: makeLocalId(),
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
+      .map((m) => {
+        const ts = m.created_at ? Date.parse(m.created_at) : NaN;
+        return {
+          id: makeLocalId(),
+          role: m.role as "user" | "assistant",
+          content: m.content,
+          // UTC instant (server stamps are +00:00 now) for per-message dates.
+          createdAt: Number.isFinite(ts) ? ts : undefined,
+        };
+      }),
     createdAt: Number.isFinite(created) ? created : updatedAt,
     updatedAt,
   };
@@ -268,6 +280,9 @@ export async function runSync(): Promise<SyncSummary> {
         id: d.id,
         title: d.title,
         model: d.model,
+        // Lets the master server merge messages instead of replacing them:
+        // web-added messages newer than this stamp are kept on push.
+        updated_at: new Date(d.updatedAt).toISOString(),
         messages: d.messages
           .filter((m) => m.role === "user" || m.role === "assistant")
           .map((m) => ({ role: m.role, content: m.content })),
@@ -278,6 +293,7 @@ export async function runSync(): Promise<SyncSummary> {
         model: b.model,
         prompts: b.prompts,
         batch: b.batch,
+        updated_at: new Date(b.updatedAt ?? b.createdAt).toISOString(),
       })),
       deleted_external_ids: deletedIds,
       keys: {

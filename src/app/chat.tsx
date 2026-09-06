@@ -93,6 +93,8 @@ type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** Creation instant (ms epoch) — shown as DD.MM.YY HH.MM under the bubble. */
+  createdAt?: number;
   /** LaTeX-corrected version of a user question, produced while the model thinks. */
   latexContent?: string;
   error?: boolean;
@@ -269,6 +271,17 @@ export default function ChatScreen() {
     void saveString(FLEX_STORAGE_KEY, flexOn ? "1" : "0");
   }, [flexOn, hydrated]);
 
+
+
+  /** DD.MM.YY HH.MM in the device's timezone. */
+  const formatMessageDate = (ts?: number): string => {
+    if (!ts) return "";
+    const d = new Date(ts);
+    const p = (n: number) => String(n).padStart(2, "0");
+    return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)} ` +
+      `${p(d.getHours())}.${p(d.getMinutes())}`;
+  };
+
   /** 🧠 chip: cycle Default → None → Low → Medium → High → XHigh → Max. */
   const cycleReasoning = () => {
     const levels: Array<ReasoningEffort | ""> = [
@@ -440,6 +453,7 @@ export default function ChatScreen() {
       id: makeId(),
       role: "user",
       content: text,
+      createdAt: Date.now(),
     };
     const currentMessages = activeDialog?.messages ?? [];
     const nextMessages = [...currentMessages, userMessage].slice(-MAX_MESSAGES);
@@ -510,6 +524,7 @@ export default function ChatScreen() {
         id: makeId(),
         role: "assistant",
         content: reply,
+        createdAt: Date.now(),
       };
       setDialogs((current) =>
         current.map((dialog) =>
@@ -681,6 +696,15 @@ export default function ChatScreen() {
                         text={autoDelimitRawLatex(message.latexContent ?? message.content)}
                         fontSize={17}
                       />
+                      {message.createdAt ? (
+                        <ThemedText
+                          type="code"
+                          themeColor="textSecondary"
+                          style={styles.messageDate}
+                        >
+                          {formatMessageDate(message.createdAt)}
+                        </ThemedText>
+                      ) : null}
                     </ThemedView>
                   </View>
                 ) : (
@@ -696,6 +720,15 @@ export default function ChatScreen() {
                     ) : (
                       <>
                         <MathAnswer text={message.content} />
+                        {message.createdAt ? (
+                          <ThemedText
+                            type="code"
+                            themeColor="textSecondary"
+                            style={styles.messageDate}
+                          >
+                            {formatMessageDate(message.createdAt)}
+                          </ThemedText>
+                        ) : null}
                         <Pressable
                           onPress={() =>
                             void handleCopy(message.content, message.id)
@@ -1067,6 +1100,11 @@ const styles = StyleSheet.create({
     alignSelf: "flex-end",
     marginTop: Spacing.one,
     paddingVertical: 2,
+  },
+  messageDate: {
+    alignSelf: "flex-start",
+    marginTop: 2,
+    fontSize: 10,
   },
   thinkingRow: {
     flexDirection: "row",

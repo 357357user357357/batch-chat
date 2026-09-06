@@ -48,6 +48,8 @@ type HistoryItem = {
   model: string;
   prompts: string[];
   createdAt: number;
+  /** Bumped whenever the batch updates, used for master-server merge. */
+  updatedAt?: number;
   batch: OpenRouterBatch | null;
   error?: string;
   /** Custom name set by the user; falls back to `batchLabel(prompts)` when empty. */
@@ -152,7 +154,9 @@ export default function BatchesScreen() {
 
   const updateItem = useCallback((id: string, patch: Partial<HistoryItem>) => {
     setHistory((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...patch } : item)),
+      prev.map((item) =>
+        item.id === id ? { ...item, ...patch, updatedAt: Date.now() } : item,
+      ),
     );
   }, []);
 
@@ -190,6 +194,7 @@ export default function BatchesScreen() {
           model: created.model,
           prompts,
           createdAt: Date.now(),
+          updatedAt: Date.now(),
           batch: created,
           error: undefined,
         },
