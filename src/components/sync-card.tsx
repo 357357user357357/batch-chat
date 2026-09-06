@@ -330,6 +330,9 @@ export function SyncCard() {
               </ThemedText>
             )}
           </Pressable>
+          <ThemedText type="small" themeColor="textSecondary">
+            {t("sync.registerHint")}
+          </ThemedText>
           <Pressable
             disabled={busy !== "idle"}
             onPress={handleGoogle}
