@@ -731,8 +731,12 @@ export default function ChatScreen() {
             </ScrollView>
 
             <View style={styles.composerArea}>
-              <View style={styles.composerMetaRow}>
-                <Pressable
+              <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.composerMetaRow}
+            >
+              <Pressable
                   onPress={() => setModelPickerOpen(true)}
                   hitSlop={8}
                   style={styles.modelButton}
@@ -775,7 +779,7 @@ export default function ChatScreen() {
                     </ThemedText>
                   </Pressable>
                 </View>
-              </View>
+            </ScrollView>
               <View style={styles.composer}>
                 <TextInput
                   value={input}
@@ -1081,17 +1085,25 @@ const styles = StyleSheet.create({
   modelButton: {
     alignSelf: "flex-start",
     paddingVertical: 2,
+    // Let a long model name shrink (ellipsis) instead of pushing the
+    // reasoning/flex chips off-screen; the row itself scrolls horizontally.
+    flexShrink: 1,
+    minWidth: 0,
   },
   composerMetaRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    // Fill the row when content is narrow so space-between keeps its layout.
+    flexGrow: 1,
     gap: Spacing.two,
   },
   chipsRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: Spacing.one,
+    // Chips must never be squeezed away by a long model name.
+    flexShrink: 0,
   },
   reasoningChip: {
     alignSelf: "flex-start",
