@@ -93,6 +93,8 @@ type ChatMessage = {
   id: string;
   role: "user" | "assistant";
   content: string;
+  /** Server-side message id (assigned by sync) — enables per-message delete. */
+  serverId?: number;
   /** Creation instant (ms epoch) — shown as DD.MM.YY HH.MM under the bubble. */
   createdAt?: number;
   /** LaTeX-corrected version of a user question, produced while the model thinks. */
@@ -289,6 +291,55 @@ export default function ChatScreen() {
     ];
     const next = levels[(levels.indexOf(reasoning) + 1) % levels.length];
     setReasoning(next);
+  };
+
+  /** Delete one Q/A: tombstones it on the master server (so the web and all
+   *  other devices drop it too) and removes it from the local dialog. */
+  const handleDeleteMessage = async (message: ChatMessage) => {
+    if (!message.serverId) {
+      Alert.alert(
+        t("common.delete"),
+        t("chat.deleteNeedsSync") ||
+          "This message is not synced yet — sync once, then delete.",
+      );
+      return;
+    }
+    Alert.alert(
+      t("common.delete"),
+      t("chat.messageDeleteConfirm", { message: message.content.slice(0, 60) }),
+      [
+        { text: t("common.cancel"), style: "cancel" },
+        {
+          text: t("common.delete"),
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              try {
+                const settings = await getSyncSettings();
+                if (!settings) throw new Error(t("chat.deleteNoServer"));
+                const resp = await fetch(
+                  `${settings.serverUrl}/api/sync/dialogs/${activeId}/messages/${message.serverId}`,
+                  { method: "DELETE", headers: { Authorization: `Bearer ${settings.token}` } },
+                );
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                setDialogs((current) =>
+                  current.map((dialog) =>
+                    dialog.id === activeId
+                      ? { ...dialog, messages: dialog.messages.filter((m) => m.id !== message.id) }
+                      : dialog,
+                  ),
+                );
+              } catch (error) {
+                Alert.alert(
+                  t("common.failed"),
+                  error instanceof Error ? error.message : String(error),
+                );
+              }
+            })();
+          },
+        },
+      ],
+    );
   };
 
   // Clear the copy feedback timer when the screen unmounts.
@@ -696,15 +747,28 @@ export default function ChatScreen() {
                         text={autoDelimitRawLatex(message.latexContent ?? message.content)}
                         fontSize={17}
                       />
-                      {message.createdAt ? (
-                        <ThemedText
-                          type="code"
-                          themeColor="textSecondary"
-                          style={styles.messageDate}
-                        >
-                          {formatMessageDate(message.createdAt)}
-                        </ThemedText>
-                      ) : null}
+                      <View style={styles.messageActions}>
+                        {message.createdAt ? (
+                          <ThemedText
+                            type="code"
+                            themeColor="textSecondary"
+                            style={styles.messageDate}
+                          >
+                            {formatMessageDate(message.createdAt)}
+                          </ThemedText>
+                        ) : null}
+                        {message.serverId ? (
+                          <Pressable
+                            onPress={() => void handleDeleteMessage(message)}
+                            hitSlop={8}
+                            style={styles.messageDeleteChip}
+                          >
+                            <ThemedText type="code" style={styles.messageDeleteText}>
+                              ✕
+                            </ThemedText>
+                          </Pressable>
+                        ) : null}
+                      </View>
                     </ThemedView>
                   </View>
                 ) : (
@@ -720,15 +784,28 @@ export default function ChatScreen() {
                     ) : (
                       <>
                         <MathAnswer text={message.content} />
-                        {message.createdAt ? (
-                          <ThemedText
-                            type="code"
-                            themeColor="textSecondary"
-                            style={styles.messageDate}
-                          >
-                            {formatMessageDate(message.createdAt)}
-                          </ThemedText>
-                        ) : null}
+                        <View style={styles.messageActions}>
+                          {message.createdAt ? (
+                            <ThemedText
+                              type="code"
+                              themeColor="textSecondary"
+                              style={styles.messageDate}
+                            >
+                              {formatMessageDate(message.createdAt)}
+                            </ThemedText>
+                          ) : null}
+                          {message.serverId ? (
+                            <Pressable
+                              onPress={() => void handleDeleteMessage(message)}
+                              hitSlop={8}
+                              style={styles.messageDeleteChip}
+                            >
+                              <ThemedText type="code" style={styles.messageDeleteText}>
+                                ✕
+                              </ThemedText>
+                            </Pressable>
+                          ) : null}
+                        </View>
                         <Pressable
                           onPress={() =>
                             void handleCopy(message.content, message.id)
@@ -1105,6 +1182,20 @@ const styles = StyleSheet.create({
     alignSelf: "flex-start",
     marginTop: 2,
     fontSize: 10,
+  },
+  messageActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: Spacing.one,
+  },
+  messageDeleteChip: {
+    paddingVertical: 1,
+    paddingHorizontal: 4,
+    borderRadius: 6,
+  },
+  messageDeleteText: {
+    fontSize: 11,
+    color: "#e05252",
   },
   thinkingRow: {
     flexDirection: "row",

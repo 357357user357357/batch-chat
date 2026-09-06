@@ -106,6 +106,8 @@ type PulledConversation = {
     role: string;
     content: string;
     model: string | null;
+    /** Server-side message id — needed to delete a specific Q/A. */
+    id?: number | null;
     created_at?: string | null;
   }[];
 };
@@ -197,6 +199,8 @@ function conversationToDialog(conv: PulledConversation): Dialog {
           id: makeLocalId(),
           role: m.role as "user" | "assistant",
           content: m.content,
+          // Server-side id — enables per-message deletion on the phone.
+          serverId: m.id ?? undefined,
           // UTC instant (server stamps are +00:00 now) for per-message dates.
           createdAt: Number.isFinite(ts) ? ts : undefined,
         };

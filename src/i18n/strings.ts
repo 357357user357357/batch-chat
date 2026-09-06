@@ -193,6 +193,10 @@ const en = {
   "chat.empty":
     "Say something! Ask a question, or paste a formula you want solved.",
   "chat.errorMessage": "Error: {message}",
+  "chat.deleteNeedsSync":
+    "This message isn't synced yet. Sync once (it will get its server copy), then delete.",
+  "chat.deleteNoServer": "Pair the app with a server first.",
+  "chat.messageDeleteConfirm": "Delete this message?\n\n\"{message}…\"",
   "chat.copy": "Copy",
   "chat.copyFormula": "Copy formula",
   "chat.copySelection": "Copy selected",
