@@ -130,7 +130,7 @@ const en = {
   "sync.remember": "Remember login and password",
   "sync.createAccount": "No account? Create one",
   "sync.backToLogin": "Back to pairing",
-  "sync.registerTitle": "Create a client account",
+  "sync.registerTitle": "Sign up with e-mail",
   "sync.pair": "Pair device",
   "sync.pairing": "Pairing…",
   "sync.pairFail": "Could not pair",

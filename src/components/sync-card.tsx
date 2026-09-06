@@ -21,6 +21,7 @@ import {
   registerAccount,
   runSync,
   saveRememberedCredentials,
+  signInWithGoogle,
   unpairDevice,
   type SyncSettings,
 } from "@/services/sync";
@@ -100,7 +101,7 @@ export function SyncCard() {
     setBusy("pairing");
     setStatusText("");
     try {
-      await registerAccount(effectiveUrl, login, password);
+      const result = await registerAccount(effectiveUrl, login, password);
       if (remember) {
         await saveRememberedCredentials({ login: login.trim(), password });
       } else {
@@ -108,11 +109,30 @@ export function SyncCard() {
       }
       setPassword("");
       setMode("pair");
+      setStatusText(
+        result.detail || "Confirmation e-mail sent — check your inbox, then pair.",
+      );
+      await refresh();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      Alert.alert(t("sync.pairFail"), message);
+    } finally {
+      setBusy("idle");
+    }
+  };
+
+  const handleGoogle = async () => {
+    const effectiveUrl = serverUrl.trim();
+    if (!effectiveUrl) return;
+    setBusy("pairing");
+    setStatusText("");
+    try {
+      await signInWithGoogle(effectiveUrl);
       await refresh();
       try {
         await performSync();
       } catch {
-        // Registration succeeded; sync can be retried via "Sync now".
+        // Sign-in succeeded; sync can be retried via "Sync now".
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -245,12 +265,13 @@ export function SyncCard() {
             onChangeText={setLogin}
             placeholder={
               mode === "register"
-                ? t("sync.registerTitle")
+                ? "E-mail (you'll get a confirmation link)"
                 : t("sync.loginPlaceholder")
             }
             placeholderTextColor={theme.textSecondary}
             autoCapitalize="none"
             autoCorrect={false}
+            keyboardType={mode === "register" ? "email-address" : "default"}
             style={[
               styles.input,
               {
@@ -308,6 +329,15 @@ export function SyncCard() {
                 {mode === "register" ? t("sync.registerTitle") : t("sync.pair")}
               </ThemedText>
             )}
+          </Pressable>
+          <Pressable
+            disabled={busy !== "idle"}
+            onPress={handleGoogle}
+            style={({ pressed }) => [styles.buttonGhost, pressed && styles.buttonDim]}
+          >
+            <ThemedText type="small" themeColor="textSecondary">
+              Sign in with Google
+            </ThemedText>
           </Pressable>
           <Pressable
             disabled={busy !== "idle"}

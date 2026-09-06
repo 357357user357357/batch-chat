@@ -19,6 +19,7 @@ import {
   storeTavilyApiKey,
 } from "@/services/key-store";
 import { loadJSON, saveJSON } from "@/services/storage";
+import * as WebBrowser from "expo-web-browser";
 
 const DIALOGS_STORAGE_KEY = "openrouter.dialogs.v1";
 const BATCHES_STORAGE_KEY = "openrouter.batches.history.v1";
@@ -218,12 +219,13 @@ export async function pairDevice(
   await saveJSON(SYNC_SETTINGS_KEY, settings);
 }
 
-/** Self-service registration: unique login + mandatory password. */
+/** Self-service registration: unique e-mail + mandatory password. The
+ * server mails a confirmation link; login works after confirming. */
 export async function registerAccount(
   serverUrl: string,
-  login: string,
+  email: string,
   password: string,
-): Promise<void> {
+): Promise<{ detail?: string }> {
   const base = normalizeServerUrl(serverUrl);
   if (!base) {
     throw new Error("Enter the server address (e.g. https://myserver.example.com).");
@@ -231,7 +233,7 @@ export async function registerAccount(
   const resp = await fetchWithTimeout(`${base}/api/auth/register`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ login: login.trim(), password }),
+    body: JSON.stringify({ email: email.trim(), password }),
   });
   if (!resp.ok) {
     let detail = `Server error (HTTP ${resp.status}).`;
@@ -241,7 +243,29 @@ export async function registerAccount(
     } catch {}
     throw new Error(detail);
   }
-  const token = ((await resp.json()) as { token: string }).token;
+  return (await resp.json()) as { detail?: string };
+}
+
+/** Google sign-in: opens the system browser, the server's OAuth callback
+ * deep-links back into the app (batchchat://oauth#token=…). */
+export async function signInWithGoogle(serverUrl: string): Promise<void> {
+  const base = normalizeServerUrl(serverUrl);
+  if (!base) {
+    throw new Error("Enter the server address (e.g. https://myserver.example.com).");
+  }
+  const result = await WebBrowser.openAuthSessionAsync(
+    `${base}/api/auth/oauth/google/start?client=phone`,
+    "batchchat://oauth",
+  );
+  if (result.type !== "success" || !result.url) {
+    throw new Error("Google sign-in was cancelled.");
+  }
+  const fragment = result.url.split("#")[1] || "";
+  const params = new URLSearchParams(fragment);
+  const token = params.get("token");
+  if (!token) {
+    throw new Error("Sign-in did not return a session token.");
+  }
   const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null };
   await saveJSON(SYNC_SETTINGS_KEY, settings);
 }
