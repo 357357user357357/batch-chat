@@ -69,9 +69,10 @@ let cachedDeviceName: string | null = null;
 
 /**
  * Stable, generic per-install device label for the master server's audit
- * trail — derived from the real model (e.g. "Redmi Note 9T" ->
- * "redmi-note-9t-x7k2") with a random suffix so multiple phones of the same
- * model are distinguishable. No specific device is ever hardcoded.
+ * trail — derived from the real device model at runtime (e.g. a phone
+ * marketed as "Some Phone 12 Pro" -> "some-phone-12-pro-4kq8") with a random
+ * suffix so multiple phones of the same model are distinguishable. No
+ * specific device is ever hardcoded.
  */
 export async function getDeviceName(): Promise<string> {
   if (cachedDeviceName) return cachedDeviceName;

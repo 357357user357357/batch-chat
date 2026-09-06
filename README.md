@@ -56,10 +56,12 @@ npx expo start
 - `src/services/openrouter.ts` — OpenRouter sync + batch + models catalog
 ## Server sync & security (HTTPS + cert pinning)
 
-When pairing with the server, use the **https** URL:
+When pairing with the server, use its **https** URL (ask the server
+administrator, or check the `SERVER_IP` in the server repo's gitignored
+`.env`). The URL is entered once on the pairing screen and stored locally:
 
 ```
-https://194.36.85.208:8443
+https://<server-ip>
 ```
 
 The app embeds the server's root CA (`res/raw/batch_chat_ca.pem`) and pins it
