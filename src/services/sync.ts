@@ -247,27 +247,53 @@ export async function registerAccount(
 }
 
 /** Google sign-in: opens the system browser, the server's OAuth callback
- * deep-links back into the app (batchchat://oauth#token=…). */
-export async function signInWithGoogle(serverUrl: string): Promise<void> {
-  const base = normalizeServerUrl(serverUrl);
-  if (!base) {
-    throw new Error("Enter the server address (e.g. https://myserver.example.com).");
-  }
-  const result = await WebBrowser.openAuthSessionAsync(
-    `${base}/api/auth/oauth/google/start?client=phone`,
-    "batchchat://oauth",
-  );
-  if (result.type !== "success" || !result.url) {
-    throw new Error("Google sign-in was cancelled.");
-  }
-  const fragment = result.url.split("#")[1] || "";
+ * deep-links back into the app (batchchat://oauth#token=…). Depending on the
+ * device, the redirect is either intercepted by the browser session (promise
+ * resolves) or delivered straight to the app as a deep link (handled by the
+ * /oauth route via completeOAuthFromUrl). Both paths are supported. */
+const OAUTH_PENDING_KEY = "sync.oauthPending.v1";
+
+export async function completeOAuthFromUrl(url: string): Promise<void> {
+  const fragment = url.split("#")[1] || "";
   const params = new URLSearchParams(fragment);
   const token = params.get("token");
   if (!token) {
     throw new Error("Sign-in did not return a session token.");
   }
+  const pending = await loadJSON<{ base?: string } | null>(OAUTH_PENDING_KEY, null);
+  const base = pending?.base ? normalizeServerUrl(pending.base) : "";
+  if (!base) {
+    throw new Error("Missing server address for sign-in.");
+  }
   const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null };
   await saveJSON(SYNC_SETTINGS_KEY, settings);
+  await saveJSON(OAUTH_PENDING_KEY, null);
+}
+
+export async function signInWithGoogle(serverUrl: string): Promise<void> {
+  const base = normalizeServerUrl(serverUrl);
+  if (!base) {
+    throw new Error("Enter the server address (e.g. https://myserver.example.com).");
+  }
+  await saveJSON(OAUTH_PENDING_KEY, { base });
+  const result = await WebBrowser.openAuthSessionAsync(
+    `${base}/api/auth/oauth/google/start?client=phone`,
+    "batchchat://oauth",
+  );
+  if (result.type === "success" && result.url) {
+    await completeOAuthFromUrl(result.url);
+    return;
+  }
+  // On many devices the OS delivers the deep link straight into the app
+  // (the /oauth route completes sign-in there). Give it a moment to land,
+  // then fail gracefully if nothing arrived.
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  const settings = await getSyncSettings();
+  if (settings?.token && settings.serverUrl === base) {
+    await saveJSON(OAUTH_PENDING_KEY, null);
+    return;
+  }
+  throw new Error("Google sign-in was cancelled.");
 }
 
 async function loginWith(base: string, login: string, password: string): Promise<string> {
