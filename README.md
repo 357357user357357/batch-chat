@@ -61,7 +61,7 @@ administrator, or check the `SERVER_IP` in the server repo's gitignored
 `.env`). The URL is entered once on the pairing screen and stored locally:
 
 ```
-https://<server-ip>
+https://flexchat.top (or the server IP)
 ```
 
 The app embeds the server's root CA (`res/raw/batch_chat_ca.pem`) and pins it
