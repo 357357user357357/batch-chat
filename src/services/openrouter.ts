@@ -87,11 +87,15 @@ export type OpenRouterUsage = {
   prompt_tokens: number;
   completion_tokens: number;
   total_tokens: number;
+  /** Present when the request asked for usage with `include: true`. */
+  cost?: number;
 };
 
 export type ChatCompletion = {
   id: string;
   model: string;
+  /** Provider slug that actually served the generation (e.g. "Novita"). */
+  provider?: string;
   choices: Array<{
     index: number;
     message: OpenRouterMessage;
@@ -264,6 +268,7 @@ async function requestWithTimeout(
         messages: withPromptCache(messages, await getCacheDurationSeconds()),
         temperature: options.temperature,
         max_tokens: options.max_tokens,
+        usage: { include: true },
         ...(options.reasoning
           ? {
               reasoning:
@@ -297,6 +302,7 @@ async function requestWithTimeout(
             messages: withPromptCache(messages, await getCacheDurationSeconds()),
             temperature: options.temperature,
             max_tokens: options.max_tokens,
+        usage: { include: true },
           }),
           signal: localSignal,
         });
@@ -330,6 +336,7 @@ async function requestWithTimeout(
             messages: withPromptCache(messages, await getCacheDurationSeconds()),
             temperature: options.temperature,
             max_tokens: options.max_tokens,
+        usage: { include: true },
             ...(flex ? { service_tier: 'flex' as const } : {}),
           }),
           signal: localSignal,

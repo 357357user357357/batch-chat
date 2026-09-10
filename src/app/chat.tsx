@@ -89,6 +89,35 @@ function currentDateTimePrompt(): string {
   );
 }
 
+/** Compact "$0.0021"-style cost label for the usage popup (US dollars). */
+function formatCost(cost?: number | null): string {
+  if (typeof cost !== "number" || !Number.isFinite(cost)) return "";
+  return `$${cost.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
+}
+
+/** True when an assistant message carries any per-message OpenRouter metadata. */
+function hasMetadata(message: ChatMessage): boolean {
+  return Boolean(
+    message.reasoning ||
+      message.provider ||
+      message.genId ||
+      message.totalTokens != null ||
+      message.cost != null,
+  );
+}
+
+/** One-line summary shown next to the date under an assistant bubble, e.g.
+ * "🧠 low · Novita · 1479 tok · $0.0021". */
+function metadataLabel(message: ChatMessage): string {
+  const parts: string[] = [];
+  if (message.reasoning) parts.push(`🧠 ${message.reasoning}`);
+  if (message.provider) parts.push(message.provider);
+  if (message.totalTokens != null) parts.push(`${message.totalTokens} tok`);
+  const cost = formatCost(message.cost);
+  if (cost) parts.push(cost);
+  return parts.join(" · ");
+}
+
 type ChatMessage = {
   id: string;
   role: "user" | "assistant";
@@ -100,6 +129,14 @@ type ChatMessage = {
   /** LaTeX-corrected version of a user question, produced while the model thinks. */
   latexContent?: string;
   error?: boolean;
+  /** OpenRouter metadata for assistant replies (shown in a tap-to-open popup). */
+  reasoning?: string | null;
+  provider?: string | null;
+  genId?: string | null;
+  tokensPrompt?: number | null;
+  tokensCompletion?: number | null;
+  totalTokens?: number | null;
+  cost?: number | null;
 };
 
 type Dialog = {
@@ -282,6 +319,32 @@ export default function ChatScreen() {
     const p = (n: number) => String(n).padStart(2, "0");
     return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)} ` +
       `${p(d.getHours())}.${p(d.getMinutes())}`;
+  };
+
+  /** Full per-message metadata popup: reasoning effort, provider, generation
+   * id and the exact prompt/completion token split + cost. */
+  const showMessageMetadata = (message: ChatMessage) => {
+    const lines: string[] = [];
+    if (message.reasoning) lines.push(`${t("chat.metaReasoning")}: ${message.reasoning}`);
+    if (message.provider) lines.push(`${t("chat.metaProvider")}: ${message.provider}`);
+    if (message.genId) lines.push(`${t("chat.metaGeneration")}: ${message.genId}`);
+    if (
+      message.tokensPrompt != null ||
+      message.tokensCompletion != null ||
+      message.totalTokens != null
+    ) {
+      const prompt = message.tokensPrompt ?? "—";
+      const completion = message.tokensCompletion ?? "—";
+      const total = message.totalTokens ?? "—";
+      lines.push(
+        `${t("chat.metaTokens")}: ${total}\n` +
+          `  ${t("chat.metaPrompt")}: ${prompt}\n` +
+          `  ${t("chat.metaCompletion")}: ${completion}`,
+      );
+    }
+    const cost = formatCost(message.cost);
+    if (cost) lines.push(`${t("chat.metaCost")}: ${cost}`);
+    Alert.alert(t("chat.metaTitle"), lines.join("\n"));
   };
 
   /** 🧠 chip: cycle Default → None → Low → Medium → High → XHigh → Max. */
@@ -576,6 +639,15 @@ export default function ChatScreen() {
         role: "assistant",
         content: reply,
         createdAt: Date.now(),
+        // Per-message OpenRouter metadata (reasoning effort the user chose,
+        // plus the serving provider + exact usage/cost from the response).
+        reasoning: reasoning || null,
+        provider: completion.provider ?? null,
+        genId: completion.id ?? null,
+        tokensPrompt: completion.usage?.prompt_tokens ?? null,
+        tokensCompletion: completion.usage?.completion_tokens ?? null,
+        totalTokens: completion.usage?.total_tokens ?? null,
+        cost: typeof completion.usage?.cost === "number" ? completion.usage.cost : null,
       };
       setDialogs((current) =>
         current.map((dialog) =>
@@ -802,6 +874,17 @@ export default function ChatScreen() {
                             >
                               <ThemedText type="code" style={styles.messageDeleteText}>
                                 ✕
+                              </ThemedText>
+                            </Pressable>
+                          ) : null}
+                          {hasMetadata(message) ? (
+                            <Pressable
+                              onPress={() => showMessageMetadata(message)}
+                              hitSlop={8}
+                              style={styles.metaChip}
+                            >
+                              <ThemedText type="code" style={styles.metaChipText}>
+                                ⓘ {metadataLabel(message)}
                               </ThemedText>
                             </Pressable>
                           ) : null}
@@ -1196,6 +1279,14 @@ const styles = StyleSheet.create({
   messageDeleteText: {
     fontSize: 11,
     color: "#e05252",
+  },
+  metaChip: {
+    paddingVertical: 1,
+    paddingHorizontal: 4,
+    borderRadius: 6,
+  },
+  metaChipText: {
+    fontSize: 10,
   },
   thinkingRow: {
     flexDirection: "row",

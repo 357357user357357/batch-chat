@@ -231,6 +231,14 @@ const en = {
   "chat.renamePlaceholder": "Name this dialog…",
   "chat.offlineTavily":
     "No internet — opening tavily.com so you can search directly.",
+  "chat.metaTitle": "Message details",
+  "chat.metaReasoning": "Reasoning",
+  "chat.metaProvider": "Provider",
+  "chat.metaGeneration": "Generation",
+  "chat.metaTokens": "Tokens",
+  "chat.metaPrompt": "Prompt",
+  "chat.metaCompletion": "Completion",
+  "chat.metaCost": "Cost",
 
   "models.searchPlaceholder": "Search by name or id…",
   "models.filter.all": "All",

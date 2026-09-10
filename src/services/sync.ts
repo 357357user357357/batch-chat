@@ -32,6 +32,18 @@ type ChatMessage = {
   content: string;
   latexContent?: string;
   error?: boolean;
+  /** Server-side message id (assigned by sync) — enables per-message delete. */
+  serverId?: number | null;
+  /** Creation instant (ms epoch) — shown as DD.MM.YY HH.MM under the bubble. */
+  createdAt?: number;
+  /** OpenRouter metadata for assistant replies (shown in a tap-to-open popup). */
+  reasoning?: string | null;
+  provider?: string | null;
+  genId?: string | null;
+  tokensPrompt?: number | null;
+  tokensCompletion?: number | null;
+  totalTokens?: number | null;
+  cost?: number | null;
 };
 
 type Dialog = {
@@ -111,6 +123,15 @@ type PulledConversation = {
     /** Server-side message id — needed to delete a specific Q/A. */
     id?: number | null;
     created_at?: string | null;
+    /** OpenRouter metadata (assistant replies): reasoning effort, provider,
+     * generation id and exact usage/cost. */
+    reasoning?: string | null;
+    provider?: string | null;
+    gen_id?: string | null;
+    tokens_prompt?: number | null;
+    tokens_completion?: number | null;
+    total_tokens?: number | null;
+    cost?: number | null;
   }[];
 };
 
@@ -384,6 +405,14 @@ function conversationToDialog(conv: PulledConversation): Dialog {
           serverId: m.id ?? undefined,
           // UTC instant (server stamps are +00:00 now) for per-message dates.
           createdAt: Number.isFinite(ts) ? ts : undefined,
+          // OpenRouter metadata (assistant replies only).
+          reasoning: m.reasoning ?? undefined,
+          provider: m.provider ?? undefined,
+          genId: m.gen_id ?? undefined,
+          tokensPrompt: m.tokens_prompt ?? undefined,
+          tokensCompletion: m.tokens_completion ?? undefined,
+          totalTokens: m.total_tokens ?? undefined,
+          cost: m.cost ?? undefined,
         };
       }),
     createdAt: Number.isFinite(created) ? created : updatedAt,
@@ -503,7 +532,17 @@ export async function runSync(): Promise<SyncSummary> {
         updated_at: new Date(d.updatedAt).toISOString(),
         messages: d.messages
           .filter((m) => m.role === "user" || m.role === "assistant")
-          .map((m) => ({ role: m.role, content: m.content })),
+          .map((m) => ({
+            role: m.role,
+            content: m.content,
+            reasoning: m.reasoning ?? null,
+            provider: m.provider ?? null,
+            gen_id: m.genId ?? null,
+            tokens_prompt: m.tokensPrompt ?? null,
+            tokens_completion: m.tokensCompletion ?? null,
+            total_tokens: m.totalTokens ?? null,
+            cost: m.cost ?? null,
+          })),
       })),
       batches: batches.map((b) => ({
         id: b.id,
