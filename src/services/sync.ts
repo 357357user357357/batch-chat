@@ -335,6 +335,23 @@ export async function unpairDevice(): Promise<void> {
   await saveRememberedCredentials(null);
 }
 
+/** Self-service account deletion: removes the account and ALL its server-side
+ * data (dialogs, messages, batches, sessions), then unpairs this device.
+ * The e-mail/login is freed, so the same address can register again. */
+export async function deleteAccount(): Promise<{ deleted_dialogs: number }> {
+  const settings = await getSyncSettings();
+  if (!settings) throw new Error("Not paired to a server.");
+  const base = settings.serverUrl.replace(/\/+$/, "");
+  const resp = await fetch(`${base}/api/auth/account`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${settings.token}` },
+  });
+  if (!resp.ok) throw new Error(await syncErrorMessage(resp));
+  const data = (await resp.json()) as { deleted_dialogs?: number };
+  await unpairDevice();
+  return { deleted_dialogs: data.deleted_dialogs ?? 0 };
+}
+
 export type SyncSummary = { pushed: number; pulled: number };
 
 async function syncErrorMessage(resp: Response): Promise<string> {

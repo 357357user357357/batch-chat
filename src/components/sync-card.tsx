@@ -23,6 +23,7 @@ import {
   saveRememberedCredentials,
   signInWithGoogle,
   unpairDevice,
+  deleteAccount,
   type SyncSettings,
 } from "@/services/sync";
 
@@ -163,6 +164,36 @@ export function SyncCard() {
     ]);
   };
 
+  const handleDeleteAccount = () => {
+    Alert.alert(t("sync.deleteAccountConfirmTitle"), t("sync.deleteAccountConfirmBody"), [
+      { text: t("common.cancel"), style: "cancel" },
+      {
+        text: t("sync.deleteAccount"),
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            setBusy("pairing");
+            try {
+              const res = await deleteAccount();
+              setStatusText(t("sync.deleteAccountDone"));
+              await refresh();
+              Alert.alert(
+                t("sync.deleteAccountConfirmTitle"),
+                `${t("sync.deleteAccountDone")} (${res.deleted_dialogs})`,
+              );
+            } catch (error) {
+              setStatusText("");
+              const message = error instanceof Error ? error.message : String(error);
+              Alert.alert(t("sync.pairFail"), message);
+            } finally {
+              setBusy("idle");
+            }
+          })();
+        },
+      },
+    ]);
+  };
+
   const handleSync = async () => {
     try {
       await performSync();
@@ -244,6 +275,18 @@ export function SyncCard() {
               </ThemedText>
             </Pressable>
           </View>
+          <Pressable
+            disabled={busy !== "idle"}
+            onPress={handleDeleteAccount}
+            style={({ pressed }) => [
+              styles.buttonGhost,
+              (pressed || busy !== "idle") && styles.buttonDim,
+            ]}
+          >
+            <ThemedText type="small" themeColor="textSecondary">
+              {t("sync.deleteAccount")}
+            </ThemedText>
+          </Pressable>
         </>
       ) : (
         <>
