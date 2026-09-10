@@ -29,11 +29,15 @@ import {
 type Busy = "idle" | "pairing" | "syncing";
 type Mode = "pair" | "register";
 
+// Default server address pre-filled in the Sync card (edit here if the
+// server ever moves — the field stays editable for any other address).
+const DEFAULT_SERVER_URL = "https://flexchat.top";
+
 export function SyncCard() {
   const theme = useTheme();
   const { t } = useI18n();
   const [settings, setSettings] = useState<SyncSettings | null>(null);
-  const [serverUrl, setServerUrl] = useState("");
+  const [serverUrl, setServerUrl] = useState(DEFAULT_SERVER_URL);
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
   const [remember, setRemember] = useState(false);
