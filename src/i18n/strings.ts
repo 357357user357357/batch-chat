@@ -208,8 +208,12 @@ const en = {
   "chat.deleteNoServer": "Pair the app with a server first.",
   "chat.retryTitle": "Re-answer with another model",
   "chat.retryNeedsSync":
-    "This answer isn't synced yet. Sync once (it will get its server copy), then retry.",
+    "This message isn't synced yet. Sync once (it will get its server copy), then retry.",
   "chat.messageDeleteConfirm": "Delete this message?\n\n\"{message}…\"",
+  "chat.editTitle": "Edit your message",
+  "chat.editSave": "Save",
+  "chat.editNeedsSync":
+    "This message isn't synced yet. Sync once (it will get its server copy), then edit.",
   "chat.copy": "Copy",
   "chat.copyFormula": "Copy formula",
   "chat.copySelection": "Copy selected",

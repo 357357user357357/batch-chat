@@ -5,6 +5,7 @@ import {
     ActivityIndicator,
     Alert,
     KeyboardAvoidingView,
+    Modal,
     Platform,
     Pressable,
     ScrollView,
@@ -205,6 +206,10 @@ export default function ChatScreen() {
   // on the server with the picked model instead of switching the dialog model.
   const [retryTarget, setRetryTarget] = useState<ChatMessage | null>(null);
   const [retryingId, setRetryingId] = useState<string | null>(null);
+  // ✏️ Edit: the user question being edited and the modal's text draft.
+  const [editing, setEditing] = useState<ChatMessage | null>(null);
+  const [editText, setEditText] = useState("");
+  const [savingEdit, setSavingEdit] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -409,7 +414,7 @@ export default function ChatScreen() {
     );
   };
 
-  /** 🔄 chip: open the model picker in retry mode for this answer. */
+  /** 🔄 chip: open the model picker in retry mode for this answer or question. */
   const startRetry = (message: ChatMessage) => {
     if (!message.serverId) {
       Alert.alert(
@@ -420,6 +425,83 @@ export default function ChatScreen() {
     }
     setRetryTarget(message);
     setModelPickerOpen(true);
+  };
+
+  /** ✏️ chip: open the edit modal for one of your own questions. */
+  const startEdit = (message: ChatMessage) => {
+    if (!message.serverId) {
+      Alert.alert(
+        t("common.failed"),
+        t("chat.editNeedsSync"),
+      );
+      return;
+    }
+    setEditText(message.content);
+    setEditing(message);
+  };
+
+  /** Save the edited question: PATCHes it on the master server (the old
+   * wording is tombstoned there, so stale pushes can't resurrect it) and
+   * updates the local copy. Then 🔄 on the edited question re-answers it. */
+  const performEdit = async () => {
+    const message = editing;
+    if (!activeId || !message?.serverId || savingEdit) return;
+    const text = editText.trim();
+    if (!text) return;
+    if (text === message.content) {
+      setEditing(null);
+      return;
+    }
+    const settings = await getSyncSettings();
+    if (!settings) {
+      Alert.alert(t("common.failed"), t("chat.deleteNoServer"));
+      return;
+    }
+    setSavingEdit(true);
+    try {
+      const resp = await fetch(
+        `${settings.serverUrl}/api/sync/dialogs/${activeId}/messages/${message.serverId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${settings.token}`,
+          },
+          body: JSON.stringify({ content: text }),
+        },
+      );
+      if (!resp.ok) {
+        let detail = `HTTP ${resp.status}`;
+        try {
+          const data = (await resp.json()) as { detail?: string };
+          if (data.detail) detail = data.detail;
+        } catch {}
+        throw new Error(detail);
+      }
+      setDialogs((current) =>
+        current.map((dialog) =>
+          dialog.id === activeId
+            ? {
+                ...dialog,
+                updatedAt: Date.now(),
+                messages: dialog.messages.map((m) =>
+                  m.id === message.id
+                    ? { ...m, content: text, latexContent: undefined }
+                    : m,
+                ),
+              }
+            : dialog,
+        ),
+      );
+      setEditing(null);
+    } catch (error) {
+      Alert.alert(
+        t("common.failed"),
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setSavingEdit(false);
+    }
   };
 
   /** Re-answer one assistant message on the server with another model: the
@@ -939,6 +1021,33 @@ export default function ChatScreen() {
                         ) : null}
                         {message.serverId ? (
                           <Pressable
+                            onPress={() => startEdit(message)}
+                            hitSlop={8}
+                            style={styles.messageDeleteChip}
+                            accessibilityRole="button"
+                            accessibilityLabel={t("chat.editTitle")}
+                          >
+                            <ThemedText type="code" style={styles.messageRetryText}>
+                              ✏️
+                            </ThemedText>
+                          </Pressable>
+                        ) : null}
+                        {message.serverId ? (
+                          <Pressable
+                            onPress={() => startRetry(message)}
+                            disabled={retryingId === message.id}
+                            hitSlop={8}
+                            style={styles.messageDeleteChip}
+                            accessibilityRole="button"
+                            accessibilityLabel={t("chat.retryTitle")}
+                          >
+                            <ThemedText type="code" style={styles.messageRetryText}>
+                              {retryingId === message.id ? "⏳" : "🔄"}
+                            </ThemedText>
+                          </Pressable>
+                        ) : null}
+                        {message.serverId ? (
+                          <Pressable
                             onPress={() => void handleDeleteMessage(message)}
                             hitSlop={8}
                             style={styles.messageDeleteChip}
@@ -1149,6 +1258,68 @@ export default function ChatScreen() {
                 setRetryTarget(null);
               }}
             />
+            <Modal
+              visible={editing !== null}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setEditing(null)}
+            >
+              <Pressable
+                style={styles.editOverlay}
+                onPress={() => setEditing(null)}
+              >
+                <Pressable
+                  style={[
+                    styles.editCard,
+                    {
+                      backgroundColor: theme.backgroundElement,
+                      borderColor: theme.backgroundSelected,
+                    },
+                  ]}
+                  onPress={(e) => e.stopPropagation()}
+                >
+                  <ThemedText type="smallBold">{t("chat.editTitle")}</ThemedText>
+                  <TextInput
+                    value={editText}
+                    onChangeText={setEditText}
+                    multiline
+                    autoFocus
+                    maxLength={8000}
+                    style={[
+                      styles.editInput,
+                      {
+                        color: theme.text,
+                        backgroundColor: theme.background,
+                        borderColor: theme.backgroundSelected,
+                      },
+                    ]}
+                  />
+                  <View style={[styles.messageActions, styles.editActions]}>
+                    <Pressable
+                      onPress={() => setEditing(null)}
+                      hitSlop={8}
+                      style={styles.editButton}
+                    >
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {t("common.cancel")}
+                      </ThemedText>
+                    </Pressable>
+                    <AnimatedPressable
+                      disabled={savingEdit || editText.trim().length === 0}
+                      onPress={() => void performEdit()}
+                      style={[
+                        styles.editSaveButton,
+                        (savingEdit || editText.trim().length === 0) && styles.sendDim,
+                      ]}
+                    >
+                      <ThemedText type="smallBold" style={styles.sendText}>
+                        {savingEdit ? "…" : t("chat.editSave")}
+                      </ThemedText>
+                    </AnimatedPressable>
+                  </View>
+                </Pressable>
+              </Pressable>
+            </Modal>
           </>
         ) : (
           <>
@@ -1416,6 +1587,46 @@ const styles = StyleSheet.create({
   },
   messageRetryText: {
     fontSize: 11,
+  },
+  editOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: Spacing.three,
+  },
+  editCard: {
+    width: "100%",
+    maxWidth: 480,
+    borderWidth: 1,
+    borderRadius: Spacing.three,
+    padding: Spacing.three,
+    gap: Spacing.two,
+  },
+  editInput: {
+    borderWidth: 1,
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
+    fontSize: 15,
+    minHeight: 88,
+    textAlignVertical: "top",
+  },
+  editActions: {
+    justifyContent: "flex-end",
+    marginTop: Spacing.one,
+  },
+  editButton: {
+    paddingVertical: Spacing.one,
+    paddingHorizontal: Spacing.two,
+  },
+  editSaveButton: {
+    backgroundColor: "#3c87f7",
+    borderRadius: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one + 2,
+    alignItems: "center",
+    justifyContent: "center",
   },
   metaChip: {
     paddingVertical: 1,
