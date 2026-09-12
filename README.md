@@ -30,9 +30,13 @@ rebuilt automatically on every push to `main` (see
 - **Batches**: compose up to 30 questions, pick a `…:batch` model from the same
   catalog, and watch them complete in the background — even across restarts
   (history is persisted on-device and in-flight batches resume automatically).
-- **Export**: every finished batch can be saved as `.csv` or a full JSON
-  journal (Android opens the system “Save” dialog, other platforms use the
-  share sheet).
+- **Export**: every finished batch can be saved as `.csv` (Android opens the
+  system “Save” dialog, other platforms use the share sheet).
+- **Backup & restore**: the **Backup** card on the home screen exports
+  everything (API keys, chats, batches) into one `.json` file and imports it
+  back on another phone — importing overwrites the current device data.
+  ⚠️ Not tested yet: this export/import flow has not been personally tested,
+  so treat it as experimental and keep the exported file before importing.
 - Your OpenRouter key is stored in the device's secure storage (Android
   Keystore), never in the bundle — unless you put it in `.env.local` for
   development (gitignored).

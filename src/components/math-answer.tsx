@@ -10,15 +10,19 @@ import { useI18n } from "@/i18n";
 /**
  * Renders AI text that may contain LaTeX: plain paragraphs + MathJax formulas.
  * The rendered text is selectable — select any portion, tap "Copy selection"
- * to copy just that part (formulas are copied as their LaTeX source), or open
- * the raw source view to copy the whole answer.
+ * to copy just that part (formulas are copied as their LaTeX source).
+ * With `onCopy`, the footer shows a plain "⧉ Copy" button that copies the
+ * whole text (LaTeX source included) instead of the selection-copy hint.
  */
 export function MathAnswer({
   text,
-  fontSize = 17,
+  fontSize = 15,
+  onCopy,
 }: {
   text: string;
   fontSize?: number;
+  /** Optional: replaces the "select text…" hint with a plain copy button. */
+  onCopy?: () => void;
 }) {
   const { t } = useI18n();
   const [showSource, setShowSource] = useState(false);
@@ -43,6 +47,41 @@ export function MathAnswer({
     copiedTimer.current = setTimeout(() => setCopied(false), 5000);
   };
 
+  // Plain whole-answer copy (formulas as LaTeX source). The button shows its
+  // own "✓ Copied" feedback, so the caller stays silent (no dialog).
+  const handleCopyAll = () => {
+    onCopy?.();
+    setCopied(true);
+    if (copiedTimer.current) clearTimeout(copiedTimer.current);
+    copiedTimer.current = setTimeout(() => setCopied(false), 5000);
+  };
+
+  // The shared footer control: a plain copy button (or the ✓ feedback), or
+  // null when no copy action was provided (then the hint text stays).
+  const copyControl = onCopy ? (
+    copied ? (
+      <ThemedText
+        type="small"
+        themeColor="text"
+        style={styles.copyHint}
+      >
+        ✓ {t("chat.copied")}
+      </ThemedText>
+    ) : (
+      <Pressable
+        onPress={handleCopyAll}
+        hitSlop={6}
+        style={styles.copyAllButton}
+        accessibilityRole="button"
+        accessibilityLabel={t("chat.copy")}
+      >
+        <ThemedText type="code" themeColor="textSecondary">
+          ⧉ {t("chat.copy")}
+        </ThemedText>
+      </Pressable>
+    )
+  ) : null;
+
   // Raw Markdown view: the whole answer (text + `$$…$$` LaTeX) as selectable
   // text, so any chunk can be long-pressed and copied *with its formulas*.
   if (showSource) {
@@ -66,10 +105,13 @@ export function MathAnswer({
 
   // No math → plain selectable text (no webview needed).
   if (!hasMath) {
+    const body = <ThemedText type="small" selectable>{text}</ThemedText>;
+    if (!onCopy) return body;
     return (
-      <ThemedText type="small" selectable>
-        {text}
-      </ThemedText>
+      <View style={styles.container}>
+        {body}
+        <View style={styles.footerRow}>{copyControl}</View>
+      </View>
     );
   }
 
@@ -95,13 +137,15 @@ export function MathAnswer({
         </Pressable>
       ) : null}
       <View style={styles.footerRow}>
-        <ThemedText
-          type="small"
-          themeColor={copied ? "text" : "textSecondary"}
-          style={styles.copyHint}
-        >
-          {copied ? `✓ ${t("chat.copied")}` : t("math.copyHint")}
-        </ThemedText>
+        {copyControl ?? (
+          <ThemedText
+            type="small"
+            themeColor={copied ? "text" : "textSecondary"}
+            style={styles.copyHint}
+          >
+            {copied ? `✓ ${t("chat.copied")}` : t("math.copyHint")}
+          </ThemedText>
+        )}
         <Pressable
           onPress={() => setShowSource(true)}
           hitSlop={6}
@@ -132,6 +176,11 @@ const styles = StyleSheet.create({
   copyHint: {
     flex: 1,
     alignSelf: "center",
+  },
+  copyAllButton: {
+    flex: 1,
+    alignSelf: "flex-start",
+    paddingVertical: 2,
   },
   copySelection: {
     alignSelf: "flex-end",

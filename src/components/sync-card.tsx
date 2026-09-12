@@ -377,18 +377,18 @@ export function SyncCard() {
               </ThemedText>
             )}
           </Pressable>
+          <Pressable
+            disabled={busy !== "idle" || !serverUrl.trim()}
+            onPress={handleGoogle}
+            style={styles.googleLink}
+          >
+            <ThemedText type="small" themeColor="textSecondary">
+              {t("sync.continueWithGoogle")}
+            </ThemedText>
+          </Pressable>
           <ThemedText type="small" themeColor="textSecondary">
             {t("sync.registerHint")}
           </ThemedText>
-          <Pressable
-            disabled={busy !== "idle"}
-            onPress={handleGoogle}
-            style={({ pressed }) => [styles.buttonGhost, pressed && styles.buttonDim]}
-          >
-            <ThemedText type="small" themeColor="textSecondary">
-              Sign in with Google
-            </ThemedText>
-          </Pressable>
           <Pressable
             disabled={busy !== "idle"}
             onPress={() => setMode(mode === "register" ? "pair" : "register")}
@@ -452,6 +452,10 @@ const styles = StyleSheet.create({
   },
   buttonDim: {
     opacity: 0.5,
+  },
+  googleLink: {
+    alignItems: "center",
+    paddingVertical: Spacing.one,
   },
   status: {
     marginTop: Spacing.one,

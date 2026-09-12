@@ -110,24 +110,11 @@ export function buildCsv(item: HistoryItem): string {
     .join("\n");
 }
 
-/** Full structured dump of one batch for the JSON export (journal). */
-export function buildJson(item: HistoryItem): string {
-  return `${JSON.stringify(exportJournal(item), null, 2)}\n`;
-}
-
-function exportJournal(item: HistoryItem): unknown {
-  return {
-    batch_id: item.id,
-    model: item.model,
-    created_at: new Date(item.createdAt).toISOString(),
-    status: item.batch?.status ?? "pending",
-    prompts: item.prompts,
-    answers:
-      item.batch && item.batch.status === "completed"
-        ? extractBatchAnswers(item.batch)
-        : [],
-  };
-}
+/**
+ * CSV export: rows `batch_id;model;custom_id;prompt;answer` — the only file
+ * export offered for a batch (the former JSON journal export was removed;
+ * restore it via git if it's ever needed again).
+ */
 
 export default function BatchesScreen() {
   const theme = useTheme();
@@ -323,8 +310,16 @@ export default function BatchesScreen() {
   // Copies the raw answer text, LaTeX formulas (`$$…$$`) included.
   const copyPrompt = (prompt: string) =>
     copyTextSafe(t("batches.copyPromptLabel"), prompt);
-  const copyAnswer = (answer: string) =>
-    copyTextSafe(t("batches.copyAnswersLabel"), answer);
+
+  // Quiet per-answer copy for the MathAnswer footer button: it shows its own
+  // "✓ Copied" feedback, so no dialog here (unlike the prompt's ⧉ icon).
+  const copyAnswerQuiet = async (text: string) => {
+    try {
+      await Clipboard.setStringAsync(text);
+    } catch {
+      // Clipboard failures are rare; the button's feedback stays optimistic.
+    }
+  };
 
   const copyAllAnswers = async (item: HistoryItem) => {
     if (!item.batch) return;
@@ -361,22 +356,6 @@ export default function BatchesScreen() {
         `${item.id}.csv`,
         buildCsv(item),
         "text/csv",
-      );
-      handleSaveOutcome(outcome);
-    } catch (error) {
-      Alert.alert(
-        t("batches.fileFail"),
-        error instanceof Error ? error.message : String(error),
-      );
-    }
-  };
-
-  const exportJson = async (item: HistoryItem) => {
-    try {
-      const outcome = await saveTextFile(
-        `${item.id}.json`,
-        buildJson(item),
-        "application/json",
       );
       handleSaveOutcome(outcome);
     } catch (error) {
@@ -528,9 +507,8 @@ export default function BatchesScreen() {
               item={selectedItem}
               onCopyAll={() => copyAllAnswers(selectedItem)}
               onSaveCsv={() => saveCsv(selectedItem)}
-              onExportJson={() => exportJson(selectedItem)}
               onCopyPrompt={copyPrompt}
-              onCopyAnswer={copyAnswer}
+              onCopyAnswer={copyAnswerQuiet}
               onRemove={() => removeItem(selectedItem.id)}
             />
           </ThemedView>
@@ -759,8 +737,8 @@ type BatchCardProps = {
   item: HistoryItem;
   onCopyAll: () => void;
   onSaveCsv: () => void;
-  onExportJson: () => void;
   onCopyPrompt: (prompt: string) => void;
+  /** Quiet copy (no dialog): the MathAnswer footer button shows "✓ Copied". */
   onCopyAnswer: (answer: string) => void;
   onRemove: () => void;
 };
@@ -769,7 +747,6 @@ function BatchCard({
   item,
   onCopyAll,
   onSaveCsv,
-  onExportJson,
   onCopyPrompt,
   onCopyAnswer,
   onRemove,
@@ -857,18 +834,10 @@ function BatchCard({
                   </Pressable>
                 </View>
                 {answer.ok ? (
-                  <>
-                    <MathAnswer text={autoDelimitRawLatex(answer.answer ?? "")} />
-                    <Pressable
-                      onPress={() => onCopyAnswer(answer.answer ?? "")}
-                      hitSlop={8}
-                      style={styles.copyAnswerButton}
-                    >
-                      <ThemedText type="code" themeColor="textSecondary">
-                        ⧉ {t("batches.copyAnswer")}
-                      </ThemedText>
-                    </Pressable>
-                  </>
+                  <MathAnswer
+                    text={autoDelimitRawLatex(answer.answer ?? "")}
+                    onCopy={() => onCopyAnswer(answer.answer ?? "")}
+                  />
                 ) : (
                   <ThemedText type="small" style={styles.errorText}>
                     ❌ {answer.error ?? t("batches.noAnswer")}
@@ -903,18 +872,6 @@ function BatchCard({
             themeColor={completed ? "textSecondary" : undefined}
           >
             {t("batches.saveCsv")}
-          </ThemedText>
-        </Pressable>
-        <Pressable
-          disabled={!completed}
-          onPress={onExportJson}
-          style={[styles.actionButton, !completed && styles.pressedDim]}
-        >
-          <ThemedText
-            type="small"
-            themeColor={completed ? "textSecondary" : undefined}
-          >
-            {t("batches.exportJson")}
           </ThemedText>
         </Pressable>
         <Pressable onPress={onRemove} style={styles.actionButton}>
@@ -1083,14 +1040,10 @@ const styles = StyleSheet.create({
   },
   answerPrompt: {
     flex: 1,
-    fontSize: 17,
+    fontSize: 14,
   },
   copyIcon: {
     paddingHorizontal: Spacing.two,
-    paddingVertical: 2,
-  },
-  copyAnswerButton: {
-    alignSelf: "flex-end",
     paddingVertical: 2,
   },
   cardActions: {

@@ -1078,7 +1078,7 @@ export default function ChatScreen() {
                     >
                       <MathAnswer
                         text={autoDelimitRawLatex(message.latexContent ?? message.content)}
-                        fontSize={17}
+                        fontSize={15}
                       />
                       <View style={styles.messageActions}>
                         {message.createdAt ? (
