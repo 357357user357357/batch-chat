@@ -206,6 +206,9 @@ const en = {
   "chat.deleteNeedsSync":
     "This message isn't synced yet. Sync once (it will get its server copy), then delete.",
   "chat.deleteNoServer": "Pair the app with a server first.",
+  "chat.retryTitle": "Re-answer with another model",
+  "chat.retryNeedsSync":
+    "This answer isn't synced yet. Sync once (it will get its server copy), then retry.",
   "chat.messageDeleteConfirm": "Delete this message?\n\n\"{message}…\"",
   "chat.copy": "Copy",
   "chat.copyFormula": "Copy formula",

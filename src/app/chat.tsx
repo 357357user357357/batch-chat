@@ -201,6 +201,10 @@ export default function ChatScreen() {
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [search, setSearch] = useState("");
+  // 🔄 Retry: while set, the model picker re-answers this assistant message
+  // on the server with the picked model instead of switching the dialog model.
+  const [retryTarget, setRetryTarget] = useState<ChatMessage | null>(null);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -403,6 +407,110 @@ export default function ChatScreen() {
         },
       ],
     );
+  };
+
+  /** 🔄 chip: open the model picker in retry mode for this answer. */
+  const startRetry = (message: ChatMessage) => {
+    if (!message.serverId) {
+      Alert.alert(
+        t("common.failed"),
+        t("chat.retryNeedsSync"),
+      );
+      return;
+    }
+    setRetryTarget(message);
+    setModelPickerOpen(true);
+  };
+
+  /** Re-answer one assistant message on the server with another model: the
+   * server re-asks the same question (context up to it) and stores the fresh
+   * answer right after the original, so every synced device sees it there. */
+  const performRetry = async (message: ChatMessage, retryModel: string) => {
+    if (!activeId || !message.serverId) return;
+    const settings = await getSyncSettings();
+    if (!settings) {
+      Alert.alert(t("common.failed"), t("chat.deleteNoServer"));
+      return;
+    }
+    setRetryingId(message.id);
+    try {
+      const resp = await fetch(`${settings.serverUrl}/api/chat/retry`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${settings.token}`,
+        },
+        body: JSON.stringify({
+          external_id: activeId,
+          message_id: message.serverId,
+          // Flex tier works here too: the server understands the ":flex"
+          // suffix and falls back to the standard tier when unsupported.
+          models: [flexOn ? `${retryModel}:flex` : retryModel],
+          ...(reasoning ? { reasoning_effort: reasoning } : {}),
+        }),
+      });
+      if (!resp.ok) {
+        let detail = `HTTP ${resp.status}`;
+        try {
+          const data = (await resp.json()) as { detail?: string };
+          if (data.detail) detail = data.detail;
+        } catch {}
+        throw new Error(detail);
+      }
+      const data = (await resp.json()) as {
+        responses: {
+          ok: boolean;
+          model: string;
+          content?: string | null;
+          error?: string | null;
+          message_id?: number | null;
+          reasoning?: string | null;
+          provider?: string | null;
+          gen_id?: string | null;
+          tokens_prompt?: number | null;
+          tokens_completion?: number | null;
+          total_tokens?: number | null;
+          cost?: number | null;
+        }[];
+      };
+      const fresh: ChatMessage[] = data.responses.map((r) => ({
+        id: makeId(),
+        role: "assistant" as const,
+        content: r.ok ? (r.content ?? "") : (r.error ?? "Retry failed"),
+        error: !r.ok,
+        serverId: r.message_id ?? undefined,
+        createdAt: Date.now(),
+        reasoning: r.reasoning ?? null,
+        provider: r.provider ?? null,
+        genId: r.gen_id ?? null,
+        tokensPrompt: r.tokens_prompt ?? null,
+        tokensCompletion: r.tokens_completion ?? null,
+        totalTokens: r.total_tokens ?? null,
+        cost: r.cost ?? null,
+      }));
+      setDialogs((current) =>
+        current.map((dialog) => {
+          if (dialog.id !== activeId || fresh.length === 0) return dialog;
+          const idx = dialog.messages.findIndex((m) => m.id === message.id);
+          const next = [...dialog.messages];
+          if (idx >= 0) next.splice(idx + 1, 0, ...fresh);
+          else next.push(...fresh);
+          return {
+            ...dialog,
+            messages: next.slice(-MAX_MESSAGES),
+            updatedAt: Date.now(),
+          };
+        }),
+      );
+    } catch (error) {
+      Alert.alert(
+        t("common.failed"),
+        error instanceof Error ? error.message : String(error),
+      );
+    } finally {
+      setRetryingId(null);
+      setRetryTarget(null);
+    }
   };
 
   // Clear the copy feedback timer when the screen unmounts.
@@ -877,6 +985,20 @@ export default function ChatScreen() {
                               </ThemedText>
                             </Pressable>
                           ) : null}
+                          {!message.error && message.serverId ? (
+                            <Pressable
+                              onPress={() => startRetry(message)}
+                              disabled={retryingId === message.id}
+                              hitSlop={8}
+                              style={styles.messageDeleteChip}
+                              accessibilityRole="button"
+                              accessibilityLabel={t("chat.retryTitle")}
+                            >
+                              <ThemedText type="code" style={styles.messageRetryText}>
+                                {retryingId === message.id ? "⏳" : "🔄"}
+                              </ThemedText>
+                            </Pressable>
+                          ) : null}
                           {hasMetadata(message) ? (
                             <Pressable
                               onPress={() => showMessageMetadata(message)}
@@ -1012,8 +1134,20 @@ export default function ChatScreen() {
               visible={modelPickerOpen}
               mode="live"
               value={model}
-              onChange={setActiveModel}
-              onClose={() => setModelPickerOpen(false)}
+              onChange={(id) => {
+                if (retryTarget) {
+                  // Retry mode: re-answer the tapped reply with this model.
+                  const target = retryTarget;
+                  setRetryTarget(null);
+                  void performRetry(target, id);
+                } else {
+                  setActiveModel(id);
+                }
+              }}
+              onClose={() => {
+                setModelPickerOpen(false);
+                setRetryTarget(null);
+              }}
             />
           </>
         ) : (
@@ -1279,6 +1413,9 @@ const styles = StyleSheet.create({
   messageDeleteText: {
     fontSize: 11,
     color: "#e05252",
+  },
+  messageRetryText: {
+    fontSize: 11,
   },
   metaChip: {
     paddingVertical: 1,
