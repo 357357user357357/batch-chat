@@ -365,20 +365,80 @@ export default function ChatScreen() {
     setReasoning(next);
   };
 
+  /** Push + pull once and reload the dialog list from storage (keeping the
+   * open dialog selected). Returns the fresh dialog list, or null on failure.
+   * Used to give brand-new live-chat messages their server ids on demand, so
+   * 🔄/✏️/✕ work right away without a manual "Sync now". */
+  const syncAndReload = async (): Promise<Dialog[] | null> => {
+    const settings = await getSyncSettings();
+    if (!settings) {
+      Alert.alert(t("common.failed"), t("chat.deleteNoServer"));
+      return null;
+    }
+    try {
+      await runSync();
+      const list = await loadJSON<Dialog[] | null>(DIALOGS_STORAGE_KEY, null);
+      if (Array.isArray(list)) {
+        setDialogs(list);
+        setActiveId((current) =>
+          current && list.some((dialog) => dialog.id === current) ? current : null);
+        return list;
+      }
+      return null;
+    } catch (error) {
+      Alert.alert(
+        t("common.failed"),
+        error instanceof Error ? error.message : String(error),
+      );
+      return null;
+    }
+  };
+
+  /** A sync pull regenerates local message ids, so re-find the tapped message
+   * in the fresh list (same role + text, closest to its old position) to get
+   * its server copy. */
+  const resolveSyncedMessage = (
+    list: Dialog[],
+    dialogId: string | null,
+    tapped: ChatMessage,
+    index: number,
+  ): ChatMessage | null => {
+    const dialog = list.find((d) => d.id === dialogId);
+    if (!dialog) return null;
+    const candidates = dialog.messages
+      .map((m, i) => ({ message: m, i }))
+      .filter(
+        ({ message }) =>
+          message.role === tapped.role &&
+          message.content === tapped.content &&
+          message.serverId,
+      );
+    if (!candidates.length) return null;
+    candidates.sort((a, b) => Math.abs(a.i - index) - Math.abs(b.i - index));
+    return candidates[0].message;
+  };
+
   /** Delete one Q/A: tombstones it on the master server (so the web and all
    *  other devices drop it too) and removes it from the local dialog. */
-  const handleDeleteMessage = async (message: ChatMessage) => {
-    if (!message.serverId) {
-      Alert.alert(
-        t("common.delete"),
-        t("chat.deleteNeedsSync") ||
-          "This message is not synced yet — sync once, then delete.",
-      );
-      return;
+  const handleDeleteMessage = async (message: ChatMessage, index: number) => {
+    let target = message;
+    if (!target.serverId) {
+      const list = await syncAndReload();
+      if (!list) return;
+      const found = resolveSyncedMessage(list, activeId, message, index);
+      if (!found?.serverId) {
+        Alert.alert(
+          t("common.delete"),
+          t("chat.deleteNeedsSync") ||
+            "This message is not synced yet — sync once, then delete.",
+        );
+        return;
+      }
+      target = found;
     }
     Alert.alert(
       t("common.delete"),
-      t("chat.messageDeleteConfirm", { message: message.content.slice(0, 60) }),
+      t("chat.messageDeleteConfirm", { message: target.content.slice(0, 60) }),
       [
         { text: t("common.cancel"), style: "cancel" },
         {
@@ -390,14 +450,14 @@ export default function ChatScreen() {
                 const settings = await getSyncSettings();
                 if (!settings) throw new Error(t("chat.deleteNoServer"));
                 const resp = await fetch(
-                  `${settings.serverUrl}/api/sync/dialogs/${activeId}/messages/${message.serverId}`,
+                  `${settings.serverUrl}/api/sync/dialogs/${activeId}/messages/${target.serverId}`,
                   { method: "DELETE", headers: { Authorization: `Bearer ${settings.token}` } },
                 );
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
                 setDialogs((current) =>
                   current.map((dialog) =>
                     dialog.id === activeId
-                      ? { ...dialog, messages: dialog.messages.filter((m) => m.id !== message.id) }
+                      ? { ...dialog, messages: dialog.messages.filter((m) => m.id !== target.id) }
                       : dialog,
                   ),
                 );
@@ -414,30 +474,41 @@ export default function ChatScreen() {
     );
   };
 
-  /** 🔄 chip: open the model picker in retry mode for this answer or question. */
-  const startRetry = (message: ChatMessage) => {
-    if (!message.serverId) {
-      Alert.alert(
-        t("common.failed"),
-        t("chat.retryNeedsSync"),
-      );
-      return;
+  /** 🔄 chip: open the model picker in retry mode for this answer or question.
+   * Not synced yet (fresh live-chat message)? Sync once on the spot, then
+   * continue with the server copy. */
+  const startRetry = async (message: ChatMessage, index: number) => {
+    let target = message;
+    if (!target.serverId) {
+      const list = await syncAndReload();
+      if (!list) return;
+      const found = resolveSyncedMessage(list, activeId, message, index);
+      if (!found?.serverId) {
+        Alert.alert(t("common.failed"), t("chat.retryNeedsSync"));
+        return;
+      }
+      target = found;
     }
-    setRetryTarget(message);
+    setRetryTarget(target);
     setModelPickerOpen(true);
   };
 
-  /** ✏️ chip: open the edit modal for one of your own questions. */
-  const startEdit = (message: ChatMessage) => {
-    if (!message.serverId) {
-      Alert.alert(
-        t("common.failed"),
-        t("chat.editNeedsSync"),
-      );
-      return;
+  /** ✏️ chip: open the edit modal for one of your own questions. Not synced
+   * yet (fresh live-chat message)? Sync once on the spot, then edit. */
+  const startEdit = async (message: ChatMessage, index: number) => {
+    let target = message;
+    if (!target.serverId) {
+      const list = await syncAndReload();
+      if (!list) return;
+      const found = resolveSyncedMessage(list, activeId, message, index);
+      if (!found?.serverId) {
+        Alert.alert(t("common.failed"), t("chat.editNeedsSync"));
+        return;
+      }
+      target = found;
     }
-    setEditText(message.content);
-    setEditing(message);
+    setEditText(target.content);
+    setEditing(target);
   };
 
   /** Save the edited question: PATCHes it on the master server (the old
@@ -998,7 +1069,7 @@ export default function ChatScreen() {
                 </ThemedText>
               ) : null}
 
-              {messages.map((message) =>
+              {messages.map((message, msgIndex) =>
                 message.role === "user" ? (
                   <View key={message.id} style={styles.userRow}>
                     <ThemedView
@@ -1019,44 +1090,38 @@ export default function ChatScreen() {
                             {formatMessageDate(message.createdAt)}
                           </ThemedText>
                         ) : null}
-                        {message.serverId ? (
-                          <Pressable
-                            onPress={() => startEdit(message)}
-                            hitSlop={8}
-                            style={styles.messageDeleteChip}
-                            accessibilityRole="button"
-                            accessibilityLabel={t("chat.editTitle")}
-                          >
-                            <ThemedText type="code" style={styles.messageRetryText}>
-                              ✏️
-                            </ThemedText>
-                          </Pressable>
-                        ) : null}
-                        {message.serverId ? (
-                          <Pressable
-                            onPress={() => startRetry(message)}
-                            disabled={retryingId === message.id}
-                            hitSlop={8}
-                            style={styles.messageDeleteChip}
-                            accessibilityRole="button"
-                            accessibilityLabel={t("chat.retryTitle")}
-                          >
-                            <ThemedText type="code" style={styles.messageRetryText}>
-                              {retryingId === message.id ? "⏳" : "🔄"}
-                            </ThemedText>
-                          </Pressable>
-                        ) : null}
-                        {message.serverId ? (
-                          <Pressable
-                            onPress={() => void handleDeleteMessage(message)}
-                            hitSlop={8}
-                            style={styles.messageDeleteChip}
-                          >
-                            <ThemedText type="code" style={styles.messageDeleteText}>
-                              ✕
-                            </ThemedText>
-                          </Pressable>
-                        ) : null}
+                        <Pressable
+                          onPress={() => void startEdit(message, msgIndex)}
+                          hitSlop={8}
+                          style={styles.messageDeleteChip}
+                          accessibilityRole="button"
+                          accessibilityLabel={t("chat.editTitle")}
+                        >
+                          <ThemedText type="code" style={styles.messageRetryText}>
+                            ✏️
+                          </ThemedText>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => void startRetry(message, msgIndex)}
+                          disabled={retryingId === message.id}
+                          hitSlop={8}
+                          style={styles.messageDeleteChip}
+                          accessibilityRole="button"
+                          accessibilityLabel={t("chat.retryTitle")}
+                        >
+                          <ThemedText type="code" style={styles.messageRetryText}>
+                            {retryingId === message.id ? "⏳" : "🔄"}
+                          </ThemedText>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => void handleDeleteMessage(message, msgIndex)}
+                          hitSlop={8}
+                          style={styles.messageDeleteChip}
+                        >
+                          <ThemedText type="code" style={styles.messageDeleteText}>
+                            ✕
+                          </ThemedText>
+                        </Pressable>
                       </View>
                     </ThemedView>
                   </View>
@@ -1083,20 +1148,18 @@ export default function ChatScreen() {
                               {formatMessageDate(message.createdAt)}
                             </ThemedText>
                           ) : null}
-                          {message.serverId ? (
+                          <Pressable
+                            onPress={() => void handleDeleteMessage(message, msgIndex)}
+                            hitSlop={8}
+                            style={styles.messageDeleteChip}
+                          >
+                            <ThemedText type="code" style={styles.messageDeleteText}>
+                              ✕
+                            </ThemedText>
+                          </Pressable>
+                          {!message.error ? (
                             <Pressable
-                              onPress={() => void handleDeleteMessage(message)}
-                              hitSlop={8}
-                              style={styles.messageDeleteChip}
-                            >
-                              <ThemedText type="code" style={styles.messageDeleteText}>
-                                ✕
-                              </ThemedText>
-                            </Pressable>
-                          ) : null}
-                          {!message.error && message.serverId ? (
-                            <Pressable
-                              onPress={() => startRetry(message)}
+                              onPress={() => void startRetry(message, msgIndex)}
                               disabled={retryingId === message.id}
                               hitSlop={8}
                               style={styles.messageDeleteChip}
