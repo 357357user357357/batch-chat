@@ -17,7 +17,10 @@
  * the standard per-token model price.
  */
 
-import { getActiveProvider } from "@/services/llm-providers";
+import {
+  getActiveProvider,
+  PROVIDER_OPENAI,
+} from "@/services/llm-providers";
 import { getCacheDurationSeconds } from "@/services/cache-settings";
 
 export type OpenRouterRole = 'system' | 'user' | 'assistant';
@@ -218,12 +221,18 @@ export function getEnvApiKey(): string | undefined {
 }
 
 /**
- * Resolves the API key at call time: env key first (dev convenience), then the
- * key the user saved in the app's secure storage (see `key-store.ts`).
+ * Resolves the API key at call time: env key for the *active provider* first
+ * (`EXPO_PUBLIC_OPENAI_API_KEY` when an OpenAI-compatible provider is active,
+ * `EXPO_PUBLIC_OPENROUTER_API_KEY` for OpenRouter), then the key the user
+ * saved in the app's secure storage (see `key-store.ts`).
  * Returns `undefined` when no key is available anywhere.
  */
 export async function resolveApiKey(): Promise<string | undefined> {
-  const envKey = getEnvApiKey();
+  const provider = await getActiveProvider();
+  const envKey =
+    provider.id === PROVIDER_OPENAI
+      ? process.env.EXPO_PUBLIC_OPENAI_API_KEY
+      : process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
   if (envKey) return envKey;
 
   try {

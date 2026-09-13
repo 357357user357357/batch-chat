@@ -67,8 +67,24 @@ export async function getLlmConfig(): Promise<LlmProviderConfig> {
     PROVIDER_SETTINGS_KEY,
     null,
   );
+  // Seed the built-in "openai" provider from build-time .env values so the
+  // EXPO_PUBLIC_OPENAI_* block in .env.local takes effect on first launch.
+  const envBaseUrl = process.env.EXPO_PUBLIC_OPENAI_BASE_URL;
+  const envModel = process.env.EXPO_PUBLIC_OPENAI_MODEL;
+  if (envBaseUrl || envModel) {
+    FALLBACK_LLM_CONFIG.providers[PROVIDER_OPENAI] = {
+      ...FALLBACK_LLM_CONFIG.providers[PROVIDER_OPENAI],
+      base_url: envBaseUrl || FALLBACK_LLM_CONFIG.providers[PROVIDER_OPENAI].base_url,
+      model: envModel || FALLBACK_LLM_CONFIG.providers[PROVIDER_OPENAI].model,
+    };
+  }
   const merged: LlmProviderConfig = {
-    provider: stored?.provider ?? FALLBACK_LLM_CONFIG.provider,
+    // Active provider can be pre-selected via EXPO_PUBLIC_LLM_PROVIDER
+    // ("openrouter" or "openai"); a stored UI selection always wins.
+    provider:
+      stored?.provider ??
+      process.env.EXPO_PUBLIC_LLM_PROVIDER ??
+      FALLBACK_LLM_CONFIG.provider,
     providers: { ...FALLBACK_LLM_CONFIG.providers },
   };
   for (const [id, settings] of Object.entries(stored?.providers ?? {})) {
