@@ -24,6 +24,15 @@ import {
   storeTavilyApiKey,
 } from "@/services/key-store";
 import {
+  getLlmConfig,
+  setActiveProvider,
+  upsertProvider,
+  PROVIDER_OPENAI,
+  PROVIDER_OPENROUTER,
+  type LlmProviderConfig,
+  type ProviderSettings,
+} from "@/services/llm-providers";
+import {
   createBatch,
   extractBatchAnswers,
   getEnvApiKey,
@@ -74,6 +83,7 @@ const DEMO_JOBS = [
 
 type Busy = "idle" | "saving" | "running" | "done";
 
+
 export function BatchTestCard({ style }: { style?: ViewStyle }) {
   const theme = useTheme();
   const { t } = useI18n();
@@ -90,14 +100,22 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
     DEFAULT_CACHE_DURATION_SECONDS,
   );
   const [keepAlive, setKeepAlive] = useState<number>(DEFAULT_KEEP_ALIVE_HOURS);
+  const [llmConfig, setLlmConfig] = useState<LlmProviderConfig | null>(null);
+  // Draft provider form (what the Save provider button writes).
+  const [providerId, setProviderId] = useState<string>(PROVIDER_OPENROUTER);
+  const [providerName, setProviderName] = useState("");
+  const [providerBaseUrl, setProviderBaseUrl] = useState("");
+  const [providerModel, setProviderModel] = useState("");
 
   const refreshKeyState = useCallback(async () => {
+    await Promise.resolve();
     setEnvKey(getEnvApiKey());
     setStoredKey(await getStoredApiKey());
     setTavilyKey(await getStoredTavilyApiKey());
   }, []);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshKeyState();
   }, [refreshKeyState]);
 
@@ -105,8 +123,64 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
     void (async () => {
       setCacheDuration(await getCacheDurationSeconds());
       setKeepAlive(await getKeepAliveHours());
+      const config = await getLlmConfig();
+      setLlmConfig(config);
+      // Seed the form with the active provider's values, ready to tweak.
+      const active = config.providers[config.provider];
+      if (active) {
+        setProviderId(active.id);
+        setProviderName(active.name);
+        setProviderBaseUrl(active.base_url);
+        setProviderModel(active.model);
+      }
     })();
   }, []);
+
+  // Writes the provider form back into config and makes it active.
+  const handleSaveProvider = async () => {
+    const baseUrl = providerBaseUrl.trim().replace(/\/+$/, "");
+    if (!baseUrl) {
+      setStatusText(t("provider.missingBaseUrl"));
+      return;
+    }
+    const settings: ProviderSettings = {
+      id: providerId,
+      name: providerName.trim() || providerId,
+      base_url: baseUrl,
+      model: providerModel.trim(),
+    };
+    await upsertProvider(settings);
+    await setActiveProvider(settings.id);
+    setLlmConfig(await getLlmConfig());
+    setStatusText(
+      t("provider.saved", { name: settings.name, baseUrl: settings.base_url }),
+    );
+  };
+
+  // Picks which provider's settings to edit (does not switch the active one).
+  const handleSelectProviderId = (id: string) => {
+    setProviderId(id);
+    const settings = llmConfig?.providers[id];
+    if (settings) {
+      setProviderName(settings.name);
+      setProviderBaseUrl(settings.base_url);
+      setProviderModel(settings.model);
+    } else {
+      setProviderName("");
+      setProviderBaseUrl("");
+      setProviderModel("");
+    }
+  };
+
+  // One-tap switch of the active provider without editing anything.
+  const handleActivateProvider = async (id: string) => {
+    await setActiveProvider(id);
+    const config = await getLlmConfig();
+    setLlmConfig(config);
+    setStatusText(
+      t("provider.switched", { name: config.providers[id]?.name ?? id }),
+    );
+  };
 
   const handleSaveKey = async () => {
     const key = inputKey.trim();
@@ -312,6 +386,129 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
         >
           <ThemedText type="smallBold" themeColor="backgroundElement">
             {t("card.runTest")}
+          </ThemedText>
+        </Pressable>
+      </View>
+
+      <View style={styles.sectionBreak} />
+
+      <ThemedText type="smallBold">{t("provider.title")}</ThemedText>
+      <ThemedText type="small" themeColor="textSecondary">
+        {t("provider.subtitle")}
+      </ThemedText>
+      <View style={styles.buttonRow}>
+        <Pressable
+          onPress={() => void handleActivateProvider(PROVIDER_OPENROUTER)}
+          style={({ pressed }) => [
+            styles.chip,
+            llmConfig?.provider === PROVIDER_OPENROUTER && styles.chipSelected,
+            pressed && styles.buttonDim,
+          ]}
+        >
+          <ThemedText
+            type="small"
+            themeColor={
+              llmConfig?.provider === PROVIDER_OPENROUTER
+                ? "backgroundElement"
+                : "textSecondary"
+            }
+          >
+            {t("provider.openrouterChip")}
+          </ThemedText>
+        </Pressable>
+        <Pressable
+          onPress={() => void handleActivateProvider(PROVIDER_OPENAI)}
+          style={({ pressed }) => [
+            styles.chip,
+            llmConfig?.provider === PROVIDER_OPENAI && styles.chipSelected,
+            pressed && styles.buttonDim,
+          ]}
+        >
+          <ThemedText
+            type="small"
+            themeColor={
+              llmConfig?.provider === PROVIDER_OPENAI
+                ? "backgroundElement"
+                : "textSecondary"
+            }
+          >
+            {t("provider.openaiChip")}
+          </ThemedText>
+        </Pressable>
+      </View>
+
+      <View style={styles.inputRow}>
+        <TextInput
+          value={providerBaseUrl}
+          onChangeText={setProviderBaseUrl}
+          placeholder={t("provider.baseUrlPlaceholder")}
+          placeholderTextColor={theme.textSecondary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          style={[
+            styles.input,
+            {
+              color: theme.text,
+              borderColor: theme.backgroundSelected,
+              backgroundColor: theme.background,
+            },
+          ]}
+        />
+      </View>
+      <View style={styles.inputRow}>
+        <TextInput
+          value={providerModel}
+          onChangeText={setProviderModel}
+          placeholder={t("provider.modelPlaceholder")}
+          placeholderTextColor={theme.textSecondary}
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={[
+            styles.input,
+            {
+              color: theme.text,
+              borderColor: theme.backgroundSelected,
+              backgroundColor: theme.background,
+            },
+          ]}
+        />
+      </View>
+      <View style={styles.buttonRow}>
+        <Pressable
+          onPress={() => void handleSelectProviderId(PROVIDER_OPENAI)}
+          style={({ pressed }) => [
+            styles.chip,
+            providerId === PROVIDER_OPENAI && styles.chipSelected,
+            pressed && styles.buttonDim,
+          ]}
+        >
+          <ThemedText
+            type="small"
+            themeColor={
+              providerId === PROVIDER_OPENAI
+                ? "backgroundElement"
+                : "textSecondary"
+            }
+          >
+            {t("provider.openaiChip")}
+          </ThemedText>
+        </Pressable>
+        <ThemedText type="small" themeColor="textSecondary">
+          {llmConfig
+            ? `${t("provider.activeLabel")} ${llmConfig.providers[llmConfig.provider]?.name ?? llmConfig.provider}`
+            : ""}
+        </ThemedText>
+        <Pressable
+          disabled={!providerBaseUrl.trim()}
+          onPress={handleSaveProvider}
+          style={({ pressed }) => [
+            styles.button,
+            (pressed || !providerBaseUrl.trim()) && styles.buttonDisabled,
+          ]}
+        >
+          <ThemedText type="smallBold" themeColor="backgroundElement">
+            {t("provider.save")}
           </ThemedText>
         </Pressable>
       </View>

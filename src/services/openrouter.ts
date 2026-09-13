@@ -17,6 +17,7 @@
  * the standard per-token model price.
  */
 
+import { getActiveProvider } from "@/services/llm-providers";
 import { getCacheDurationSeconds } from "@/services/cache-settings";
 
 export type OpenRouterRole = 'system' | 'user' | 'assistant';
@@ -123,7 +124,6 @@ export type BatchResult = {
   error?: string;
 };
 
-const OPENROUTER_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 /**
  * Asynchronous Batch API: 50% of the model's per-token price, 24h window.
@@ -133,6 +133,16 @@ const OPENROUTER_BATCH_URL = 'https://openrouter.ai/api/beta/batches';
 
 /** Full catalog of models available on OpenRouter (used for pickers). */
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+
+/**
+ * Any alternative provider is an OpenAI-compatible endpoint: chat POST goes
+ * to `<base_url>/chat/completions`. The base URL, key and default model come
+ * from `llm-providers.ts` (providers list + active provider selection).
+ */
+async function providerChatUrl(): Promise<string> {
+  const provider = await getActiveProvider();
+  return `${provider.base_url.replace(/\/+$/, '')}/chat/completions`;
+}
 
 /** Cheaper batch model: 50% off the standard price. */
 export const OPENROUTER_BATCH_MODEL =
@@ -230,7 +240,7 @@ export function getApiKey(): string {
   const key = process.env.EXPO_PUBLIC_OPENROUTER_API_KEY;
   if (!key) {
     throw new OpenRouterError(
-      'No OpenRouter API key configured. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
+      'No API key configured for the selected provider. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
     );
   }
   return key;
@@ -253,11 +263,12 @@ async function requestWithTimeout(
     const key = await resolveApiKey();
     if (!key) {
       throw new OpenRouterError(
-        'No OpenRouter API key configured. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
+        'No API key configured. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
       );
     }
+    const chatUrl = await providerChatUrl();
     const { base, flex } = splitModelVariant(options.model);
-    const response = await fetch(OPENROUTER_URL, {
+    const response = await fetch(chatUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -291,7 +302,7 @@ async function requestWithTimeout(
       }
       // Flex tier not available for this model → retry on the standard tier
       if (flex && isFlexUnsupportedError(response.status, detail)) {
-        const retry = await fetch(OPENROUTER_URL, {
+        const retry = await fetch(chatUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -325,7 +336,7 @@ async function requestWithTimeout(
       // Reasoning param rejected (model can't disable / doesn't support it)
       // → retry once without it (model default applies).
       if (options.reasoning && isReasoningUnsupportedError(response.status, detail)) {
-        const retry = await fetch(OPENROUTER_URL, {
+        const retry = await fetch(chatUrl, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -563,7 +574,7 @@ export async function createBatch(
   const key = await resolveApiKey();
   if (!key) {
     throw new OpenRouterError(
-      'No OpenRouter API key configured. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
+      'No API key configured for the selected provider. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
     );
   }
 
@@ -613,7 +624,7 @@ export async function getBatch(batchId: string): Promise<OpenRouterBatch> {
   const key = await resolveApiKey();
   if (!key) {
     throw new OpenRouterError(
-      'No OpenRouter API key configured. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
+      'No API key configured for the selected provider. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
     );
   }
   const maxAttempts = 3;
@@ -727,7 +738,7 @@ export async function listModels(): Promise<OpenRouterModelInfo[]> {
   const key = await resolveApiKey();
   if (!key) {
     throw new OpenRouterError(
-      'No OpenRouter API key configured. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
+      'No API key configured for the selected provider. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
     );
   }
   const response = await fetch(OPENROUTER_MODELS_URL, {

@@ -59,6 +59,19 @@ const en = {
   "status.error": "error",
 
   "card.title": "OpenRouter: key & sessions",
+  "provider.title": "LLM provider",
+  "provider.subtitle":
+    "Works with any OpenAI-compatible endpoint (OpenRouter, Fastrouter, Groq, …).",
+  "provider.activeLabel": "Active:",
+  "provider.baseUrlPlaceholder": "Base URL (https://api.fastrouter.ai/v1)",
+  "provider.modelPlaceholder": "Default model (z-ai/glm-5.3-flash)",
+  "provider.namePlaceholder": "Provider label",
+  "provider.save": "Save provider",
+  "provider.saved": "Provider saved: {name} (base {baseUrl}).",
+  "provider.switched": "Active provider: {name}.",
+  "provider.missingBaseUrl": "Base URL is required.",
+  "provider.openrouterChip": "OpenRouter",
+  "provider.openaiChip": "OpenAI-compatible",
   "card.batchModelNote":
     "Batch model: {model} — roughly 2× cheaper than the live model; runs up to ~24h.",
   "card.envKeyNote":
