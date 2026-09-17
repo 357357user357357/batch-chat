@@ -32,6 +32,10 @@ yarn-error.*
 
 # local env files
 .env*.local
+.env
+
+# editor/agent tool state
+.codewhale/
 
 # locally/CI-produced release artifacts
 /batch-chat.apk
