@@ -33,6 +33,7 @@ import {
     OPENROUTER_MODEL,
     type OpenRouterMessage,
     type ReasoningEffort,
+    withFlexSuffix,
 } from "@/services/openrouter";
 import { loadJSON, loadString, saveJSON, saveString } from "@/services/storage";
 import {
@@ -598,7 +599,7 @@ export default function ChatScreen() {
           message_id: message.serverId,
           // Flex tier works here too: the server understands the ":flex"
           // suffix and falls back to the standard tier when unsupported.
-          models: [flexOn ? `${retryModel}:flex` : retryModel],
+          models: [flexOn ? withFlexSuffix(retryModel) : retryModel],
           ...(reasoning ? { reasoning_effort: reasoning } : {}),
         }),
       });
@@ -886,7 +887,7 @@ export default function ChatScreen() {
       ];
 
       const completion = await chat(requestMessages, {
-        model: flexOn ? `${model}:flex` : model,
+        model: flexOn ? withFlexSuffix(model) : model,
         ...(reasoning ? { reasoning } : {}),
         timeoutMs: 120_000,
       });

@@ -171,8 +171,18 @@ export function splitModelVariant(model: string): { base: string; flex: boolean 
   return { base: trimmed, flex: false };
 }
 
+/** Appends the Flex suffix unless the model already carries it — the suffix
+ * self-actualizes through splitModelVariant, so appending it twice would
+ * leave a literal ":flex:flex" id that no provider can route. */
+export function withFlexSuffix(model: string): string {
+  const trimmed = model.trim();
+  return trimmed.endsWith(FLEX_SUFFIX) ? trimmed : `${trimmed}${FLEX_SUFFIX}`;
+}
+
 function isFlexUnsupportedError(status: number | undefined, body: unknown): boolean {
-  if (status !== 400) return false;
+  // OpenRouter answers 400; strict OpenAI-compatible gateways (pydantic-style
+  // validation) answer 422 — both only count when the message names the tier.
+  if (status !== 400 && status !== 422) return false;
   const text =
     typeof body === 'string'
       ? body
@@ -277,19 +287,18 @@ async function requestWithTimeout(
     }
     const chatUrl = await providerChatUrl();
     const { base, flex } = splitModelVariant(options.model);
-    const response = await fetch(chatUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${key}`,
-      },
-      body: JSON.stringify({
+    // Built once — identical across attempts, exactly like the server's
+    // chat_completion_full, which reuses one payload for its fallbacks.
+    const cachedMessages = withPromptCache(messages, await getCacheDurationSeconds());
+
+    const buildBody = (withFlex: boolean, withReasoning: boolean) =>
+      JSON.stringify({
         model: base,
-        messages: withPromptCache(messages, await getCacheDurationSeconds()),
+        messages: cachedMessages,
         temperature: options.temperature,
         max_tokens: options.max_tokens,
         usage: { include: true },
-        ...(options.reasoning
+        ...(withReasoning && options.reasoning
           ? {
               reasoning:
                 options.reasoning === 'none'
@@ -297,91 +306,58 @@ async function requestWithTimeout(
                   : { effort: options.reasoning },
             }
           : {}),
-        ...(flex ? { service_tier: 'flex' as const } : {}),
-      }),
-      signal: localSignal,
-    });
+        ...(withFlex ? { service_tier: 'flex' as const } : {}),
+      });
 
-    if (!response.ok) {
-      let detail: unknown;
+    const post = (body: string) =>
+      fetch(chatUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${key}`,
+        },
+        body,
+        signal: localSignal,
+      });
+
+    const readDetail = async (failed: Response): Promise<unknown> => {
       try {
-        detail = await response.json();
+        return await failed.json();
       } catch {
-        detail = await response.text();
+        return await failed.text();
       }
+    };
+
+    // Fallback chain, mirroring the server: a rejected flex tier drops only
+    // service_tier (the reasoning choice survives); a rejected reasoning param
+    // drops only reasoning (flex stays unless it was already dropped).
+    let response = await post(buildBody(flex, Boolean(options.reasoning)));
+    if (!response.ok) {
+      let detail = await readDetail(response);
+      let flexDropped = false;
       // Flex tier not available for this model → retry on the standard tier
       if (flex && isFlexUnsupportedError(response.status, detail)) {
-        const retry = await fetch(chatUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model: base,
-            messages: withPromptCache(messages, await getCacheDurationSeconds()),
-            temperature: options.temperature,
-            max_tokens: options.max_tokens,
-        usage: { include: true },
-          }),
-          signal: localSignal,
-        });
-        if (!retry.ok) {
-          let retryDetail: unknown;
-          try {
-            retryDetail = await retry.json();
-          } catch {
-            retryDetail = await retry.text();
-          }
-          throw new OpenRouterError(
-            `OpenRouter request failed with HTTP ${retry.status}`,
-            retry.status,
-            retryDetail
-          );
-        }
-        const retryRaw = await retry.json();
-        return { ...(retryRaw as ChatCompletion), raw: retryRaw };
+        response = await post(buildBody(false, true));
+        flexDropped = true;
+        if (!response.ok) detail = await readDetail(response);
       }
       // Reasoning param rejected (model can't disable / doesn't support it)
       // → retry once without it (model default applies).
-      if (options.reasoning && isReasoningUnsupportedError(response.status, detail)) {
-        const retry = await fetch(chatUrl, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${key}`,
-          },
-          body: JSON.stringify({
-            model: base,
-            messages: withPromptCache(messages, await getCacheDurationSeconds()),
-            temperature: options.temperature,
-            max_tokens: options.max_tokens,
-        usage: { include: true },
-            ...(flex ? { service_tier: 'flex' as const } : {}),
-          }),
-          signal: localSignal,
-        });
-        if (!retry.ok) {
-          let retryDetail: unknown;
-          try {
-            retryDetail = await retry.json();
-          } catch {
-            retryDetail = await retry.text();
-          }
-          throw new OpenRouterError(
-            `OpenRouter request failed with HTTP ${retry.status}`,
-            retry.status,
-            retryDetail
-          );
-        }
-        const retryRaw = await retry.json();
-        return { ...(retryRaw as ChatCompletion), raw: retryRaw };
+      if (
+        !response.ok &&
+        options.reasoning &&
+        isReasoningUnsupportedError(response.status, detail)
+      ) {
+        response = await post(buildBody(flexDropped ? false : flex, false));
+        if (!response.ok) detail = await readDetail(response);
       }
-      throw new OpenRouterError(
-        `OpenRouter request failed with HTTP ${response.status}`,
-        response.status,
-        detail
-      );
+      if (!response.ok) {
+        throw new OpenRouterError(
+          `OpenRouter request failed with HTTP ${response.status}`,
+          response.status,
+          detail
+        );
+      }
     }
 
     const raw = await response.json();
