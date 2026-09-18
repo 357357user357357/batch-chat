@@ -9,16 +9,19 @@
  * (per-conversation last-write-wins, tombstones remove locally too).
  */
 import {
-  type OpenRouterBatch,
-  type OpenRouterBatchResultItem,
-} from "@/services/openrouter";
-import {
   getStoredApiKey,
   getStoredTavilyApiKey,
   storeApiKey,
   storeTavilyApiKey,
 } from "@/services/key-store";
 import { loadJSON, saveJSON } from "@/services/storage";
+import {
+  conversationToDialog,
+  conversationToHistoryItem,
+  type Dialog,
+  type HistoryItem,
+  type PulledConversation,
+} from "@/services/sync-mapping";
 import * as WebBrowser from "expo-web-browser";
 
 const DIALOGS_STORAGE_KEY = "openrouter.dialogs.v1";
@@ -26,51 +29,21 @@ const BATCHES_STORAGE_KEY = "openrouter.batches.history.v1";
 const SYNC_SETTINGS_KEY = "sync.settings.v1";
 const SYNC_SNAPSHOT_KEY = "sync.snapshotIds.v1";
 
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  latexContent?: string;
-  error?: boolean;
-  /** Server-side message id (assigned by sync) — enables per-message delete. */
-  serverId?: number | null;
-  /** Creation instant (ms epoch) — shown as DD.MM.YY HH.MM under the bubble. */
-  createdAt?: number;
-  /** OpenRouter metadata for assistant replies (shown in a tap-to-open popup). */
-  reasoning?: string | null;
-  provider?: string | null;
-  genId?: string | null;
-  tokensPrompt?: number | null;
-  tokensCompletion?: number | null;
-  totalTokens?: number | null;
-  cost?: number | null;
-};
-
-type Dialog = {
-  id: string;
-  title: string;
-  model: string;
-  messages: ChatMessage[];
-  createdAt: number;
-  updatedAt: number;
-};
-
-type HistoryItem = {
-  id: string;
-  model: string;
-  prompts: string[];
-  createdAt: number;
-  /** Bumped whenever the batch updates — used by the master-server merge. */
-  updatedAt?: number;
-  batch: OpenRouterBatch | null;
-  error?: string;
-  title?: string;
+/** Who this device is synced as — fetched from GET /api/auth/me and shown
+ * on the sync card so the user always sees which account is syncing. */
+export type SyncAccount = {
+  account_id: string | null;
+  label: string | null;
+  email: string | null;
+  is_owner: boolean;
 };
 
 export type SyncSettings = {
   serverUrl: string;
   token: string;
   lastSyncAt: string | null;
+  /** Filled by pairDevice / runSync (best effort — missing info is fine). */
+  account?: SyncAccount | null;
 };
 
 import * as Device from "expo-device";
@@ -107,33 +80,6 @@ export async function getDeviceName(): Promise<string> {
 }
 
 type SyncSnapshot = { dialogIds: string[]; batchIds: string[] };
-
-type PulledConversation = {
-  external_id: string;
-  kind: string;
-  model: string | null;
-  title: string;
-  created_at: string | null;
-  updated_at: string | null;
-  deleted: boolean;
-  messages: {
-    role: string;
-    content: string;
-    model: string | null;
-    /** Server-side message id — needed to delete a specific Q/A. */
-    id?: number | null;
-    created_at?: string | null;
-    /** OpenRouter metadata (assistant replies): reasoning effort, provider,
-     * generation id and exact usage/cost. */
-    reasoning?: string | null;
-    provider?: string | null;
-    gen_id?: string | null;
-    tokens_prompt?: number | null;
-    tokens_completion?: number | null;
-    total_tokens?: number | null;
-    cost?: number | null;
-  }[];
-};
 
 let idCounter = 0;
 function makeLocalId(): string {
@@ -236,7 +182,9 @@ export async function pairDevice(
       throw new Error(`Server error (HTTP ${pairResp.status}).`);
     }
   }
-  const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null };
+  // Who did we just pair as? (best effort — shown on the sync card)
+  const account = await fetchSyncAccount(base, token);
+  const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null, account };
   await saveJSON(SYNC_SETTINGS_KEY, settings);
 }
 
@@ -286,7 +234,8 @@ export async function completeOAuthFromUrl(url: string): Promise<void> {
   if (!base) {
     throw new Error("Missing server address for sign-in.");
   }
-  const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null };
+  const account = await fetchSyncAccount(base, token);
+  const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null, account };
   await saveJSON(SYNC_SETTINGS_KEY, settings);
   await saveJSON(OAUTH_PENDING_KEY, null);
 }
@@ -385,103 +334,32 @@ async function syncErrorMessage(resp: Response): Promise<string> {
   }
 }
 
-function conversationToDialog(conv: PulledConversation): Dialog {
-  const updated = conv.updated_at ? Date.parse(conv.updated_at) : NaN;
-  const created = conv.created_at ? Date.parse(conv.created_at) : NaN;
-  const updatedAt = Number.isFinite(updated) ? updated : Date.now();
-  return {
-    id: conv.external_id,
-    title: conv.title,
-    model: conv.model || "",
-    messages: conv.messages
-      .filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => {
-        const ts = m.created_at ? Date.parse(m.created_at) : NaN;
-        return {
-          id: makeLocalId(),
-          role: m.role as "user" | "assistant",
-          content: m.content,
-          // Server-side id — enables per-message deletion on the phone.
-          serverId: m.id ?? undefined,
-          // UTC instant (server stamps are +00:00 now) for per-message dates.
-          createdAt: Number.isFinite(ts) ? ts : undefined,
-          // OpenRouter metadata (assistant replies only).
-          reasoning: m.reasoning ?? undefined,
-          provider: m.provider ?? undefined,
-          genId: m.gen_id ?? undefined,
-          tokensPrompt: m.tokens_prompt ?? undefined,
-          tokensCompletion: m.tokens_completion ?? undefined,
-          totalTokens: m.total_tokens ?? undefined,
-          cost: m.cost ?? undefined,
-        };
-      }),
-    createdAt: Number.isFinite(created) ? created : updatedAt,
-    updatedAt,
-  };
-}
-
-/** Rebuilds a synthetic (already-"completed") OpenRouterBatch from the
- * flattened prompt/answer message pairs a sync pull returns. */
-function conversationToHistoryItem(conv: PulledConversation): HistoryItem {
-  const created = conv.created_at ? Date.parse(conv.created_at) : NaN;
-  const createdAt = Number.isFinite(created) ? created : Date.now();
-  const prompts: string[] = [];
-  const results: OpenRouterBatchResultItem[] = [];
-  let reqIndex = 0;
-
-  for (let i = 0; i < conv.messages.length; i++) {
-    const message = conv.messages[i];
-    if (message.role !== "user") continue;
-    reqIndex += 1;
-    prompts.push(message.content);
-    const next = conv.messages[i + 1];
-    if (next && next.role === "assistant") {
-      const customId = `req-${reqIndex}`;
-      results.push({
-        id: `res-${customId}`,
-        custom_id: customId,
-        response: {
-          status_code: 200,
-          body: {
-            id: `res-${customId}`,
-            model: conv.model || "",
-            raw: null,
-            choices: [
-              { index: 0, message: { role: "assistant", content: next.content }, finish_reason: "stop" },
-            ],
-          },
-        },
-      });
-    }
+/** Best-effort account lookup (GET /api/auth/me): who is this token for?
+ * Never throws — an unknown account only means the card shows less info. */
+async function fetchSyncAccount(
+  base: string,
+  token: string,
+): Promise<SyncAccount | null> {
+  try {
+    const resp = await fetchWithTimeout(`${base}/api/auth/me`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!resp.ok) return null;
+    const data = (await resp.json()) as {
+      account_id?: string | null;
+      label?: string | null;
+      email?: string | null;
+      is_owner?: boolean;
+    };
+    return {
+      account_id: data.account_id ?? null,
+      label: data.label ?? null,
+      email: data.email ?? null,
+      is_owner: Boolean(data.is_owner),
+    };
+  } catch {
+    return null;
   }
-
-  const batch: OpenRouterBatch = {
-    id: conv.external_id,
-    object: "batch",
-    endpoint: "/v1/chat/completions",
-    model: conv.model || "",
-    completion_window: "24h",
-    status: "completed",
-    created_at: Math.floor(createdAt / 1000),
-    finalized_at: Math.floor(createdAt / 1000),
-    request_counts: {
-      total: prompts.length,
-      completed: results.length,
-      failed: prompts.length - results.length,
-    },
-    usage: null,
-    results,
-    error: null,
-  };
-
-  return {
-    id: conv.external_id,
-    model: conv.model || "",
-    prompts,
-    createdAt,
-    batch,
-    title: conv.title,
-  };
 }
 
 /** Push every local dialog/batch, then pull the server's view back in.
@@ -535,6 +413,9 @@ export async function runSync(): Promise<SyncSummary> {
           .map((m) => ({
             role: m.role,
             content: m.content,
+            // Exact serving model per reply (assistant) — round-trips so the
+            // phone shows which model answered each message after a pull.
+            model: m.model ?? null,
             reasoning: m.reasoning ?? null,
             provider: m.provider ?? null,
             gen_id: m.genId ?? null,
@@ -592,7 +473,7 @@ export async function runSync(): Promise<SyncSummary> {
       if (!conv.deleted) nextBatches = [...nextBatches, conversationToHistoryItem(conv)];
     } else {
       nextDialogs = nextDialogs.filter((d) => d.id !== conv.external_id);
-      if (!conv.deleted) nextDialogs = [...nextDialogs, conversationToDialog(conv)];
+      if (!conv.deleted) nextDialogs = [...nextDialogs, conversationToDialog(conv, makeLocalId)];
     }
   }
 
@@ -600,7 +481,13 @@ export async function runSync(): Promise<SyncSummary> {
     dialogIds: nextDialogs.map((d) => d.id),
     batchIds: nextBatches.map((b) => b.id),
   };
-  const nextSettings: SyncSettings = { ...settings, lastSyncAt: pullResult.server_time };
+  // Refresh the account display (email/owner flag) on every successful sync.
+  const account = await fetchSyncAccount(settings.serverUrl, settings.token);
+  const nextSettings: SyncSettings = {
+    ...settings,
+    lastSyncAt: pullResult.server_time,
+    ...(account ? { account } : {}),
+  };
 
   await Promise.all([
     saveJSON(DIALOGS_STORAGE_KEY, nextDialogs),

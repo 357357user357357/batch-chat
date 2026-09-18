@@ -227,6 +227,14 @@ export function SyncCard() {
     })();
   }, [performSync]);
 
+  // Who is syncing (email / label / tail of the account id) — best effort,
+  // empty when the server didn't report an account for this token.
+  const account = settings?.account ?? null;
+  const accountLabel =
+    account?.email ||
+    account?.label ||
+    (account?.account_id ? `…${account.account_id.slice(-6)}` : "");
+
   return (
     <ThemedView type="backgroundElement" style={styles.card}>
       <View style={styles.rowBetween}>
@@ -242,6 +250,12 @@ export function SyncCard() {
           <ThemedText type="small" themeColor="textSecondary">
             {t("sync.pairedWith", { server: settings.serverUrl })}
           </ThemedText>
+          {accountLabel ? (
+            <ThemedText type="small" themeColor="textSecondary">
+              {t("sync.signedInAs", { account: accountLabel })}
+              {account?.is_owner ? ` · ${t("sync.ownerTag")}` : ""}
+            </ThemedText>
+          ) : null}
           <ThemedText type="small" themeColor="textSecondary">
             {settings.lastSyncAt
               ? t("sync.lastSynced", {

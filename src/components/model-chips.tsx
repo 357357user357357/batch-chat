@@ -12,7 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/hooks/use-theme';
-import { listModels, type OpenRouterModelInfo } from '@/services/openrouter';
+import { listModels, withFlexSuffix, type OpenRouterModelInfo } from '@/services/openrouter';
 
 export type ModelChipsProps = {
   /** 'batch' shows only `…:batch` models, 'live' shows regular ones. */
@@ -200,7 +200,18 @@ export function ModelChips({ mode, value, onChange, visibleCount = 8 }: ModelChi
                           <ThemedText type="code" themeColor="textSecondary" style={styles.badge}>
                             batch
                           </ThemedText>
-                        ) : null}
+                        ) : (
+                          <Pressable
+                            hitSlop={8}
+                            onPress={() => selectModel(withFlexSuffix(model.id))}
+                            accessibilityRole="button"
+                            accessibilityLabel={t('models.useFlex', { model: model.id })}
+                            style={styles.flexBadge}>
+                            <ThemedText type="code" style={styles.flexBadgeText}>
+                              {t('models.flexBadge')}
+                            </ThemedText>
+                          </Pressable>
+                        )}
                       </View>
                       <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
                         {model.id} · $
@@ -357,5 +368,16 @@ const styles = StyleSheet.create({
   },
   errorText: {
     color: '#e05252',
+  },
+  flexBadge: {
+    borderWidth: 1,
+    borderColor: 'rgba(60,135,247,0.55)',
+    backgroundColor: 'rgba(60,135,247,0.14)',
+    borderRadius: Spacing.one,
+    paddingHorizontal: Spacing.one,
+  },
+  flexBadgeText: {
+    fontSize: 10,
+    color: '#3c87f7',
   },
 });

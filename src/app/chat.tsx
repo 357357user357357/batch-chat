@@ -28,6 +28,13 @@ import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
 import { getSyncSettings, runSync } from "@/services/sync";
 import {
+    formatCost,
+    formatMessageDate,
+    hasReplyMetadata,
+    metadataLabel,
+} from "@/services/message-meta";
+import type { ChatMessage, Dialog } from "@/services/sync-mapping";
+import {
     chat,
     formatQuestionLatex,
     OPENROUTER_MODEL,
@@ -91,64 +98,35 @@ function currentDateTimePrompt(): string {
   );
 }
 
-/** Compact "$0.0021"-style cost label for the usage popup (US dollars). */
-function formatCost(cost?: number | null): string {
-  if (typeof cost !== "number" || !Number.isFinite(cost)) return "";
-  return `$${cost.toFixed(6).replace(/0+$/, "").replace(/\.$/, "")}`;
+/** Adapter: the local ChatMessage (camelCase) → message-meta's structural
+ * source (server-style snake_case), so live replies and synced ones share
+ * one caption formatter. */
+function metaSource(message: ChatMessage) {
+  return {
+    model: message.model ?? null,
+    tokens_prompt: message.tokensPrompt ?? null,
+    tokens_completion: message.tokensCompletion ?? null,
+    total_tokens: message.totalTokens ?? null,
+    cost: message.cost ?? null,
+    provider: message.provider ?? null,
+    createdAt: message.createdAt ?? null,
+  };
 }
 
-/** True when an assistant message carries any per-message OpenRouter metadata. */
+/** True when an assistant bubble gets the ⓘ stats chip. */
 function hasMetadata(message: ChatMessage): boolean {
-  return Boolean(
-    message.reasoning ||
-      message.provider ||
-      message.genId ||
-      message.totalTokens != null ||
-      message.cost != null,
+  return (
+    hasReplyMetadata(metaSource(message)) ||
+    Boolean(message.reasoning) ||
+    Boolean(message.genId)
   );
 }
 
-/** One-line summary shown next to the date under an assistant bubble, e.g.
- * "🧠 low · Novita · 1479 tok · $0.0021". */
-function metadataLabel(message: ChatMessage): string {
-  const parts: string[] = [];
-  if (message.reasoning) parts.push(`🧠 ${message.reasoning}`);
-  if (message.provider) parts.push(message.provider);
-  if (message.totalTokens != null) parts.push(`${message.totalTokens} tok`);
-  const cost = formatCost(message.cost);
-  if (cost) parts.push(cost);
-  return parts.join(" · ");
+/** One-line caption under an assistant bubble, e.g.
+ * "12.09.26 14:03 · deepseek-v4 🧊 · 1.2k tok · $0.0123". */
+function metaCaption(message: ChatMessage): string {
+  return metadataLabel(metaSource(message)) ?? "";
 }
-
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  /** Server-side message id (assigned by sync) — enables per-message delete. */
-  serverId?: number;
-  /** Creation instant (ms epoch) — shown as DD.MM.YY HH.MM under the bubble. */
-  createdAt?: number;
-  /** LaTeX-corrected version of a user question, produced while the model thinks. */
-  latexContent?: string;
-  error?: boolean;
-  /** OpenRouter metadata for assistant replies (shown in a tap-to-open popup). */
-  reasoning?: string | null;
-  provider?: string | null;
-  genId?: string | null;
-  tokensPrompt?: number | null;
-  tokensCompletion?: number | null;
-  totalTokens?: number | null;
-  cost?: number | null;
-};
-
-type Dialog = {
-  id: string;
-  title: string;
-  model: string;
-  messages: ChatMessage[];
-  createdAt: number;
-  updatedAt: number;
-};
 
 let counter = 0;
 function makeId(): string {
@@ -322,19 +300,11 @@ export default function ChatScreen() {
 
 
 
-  /** DD.MM.YY HH.MM in the device's timezone. */
-  const formatMessageDate = (ts?: number): string => {
-    if (!ts) return "";
-    const d = new Date(ts);
-    const p = (n: number) => String(n).padStart(2, "0");
-    return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)} ` +
-      `${p(d.getHours())}.${p(d.getMinutes())}`;
-  };
-
-  /** Full per-message metadata popup: reasoning effort, provider, generation
-   * id and the exact prompt/completion token split + cost. */
+  /** Full per-message metadata popup: exact model, reasoning effort,
+   * provider, generation id and the prompt/completion token split + cost. */
   const showMessageMetadata = (message: ChatMessage) => {
     const lines: string[] = [];
+    if (message.model) lines.push(`${t("chat.metaModel")}: ${message.model}`);
     if (message.reasoning) lines.push(`${t("chat.metaReasoning")}: ${message.reasoning}`);
     if (message.provider) lines.push(`${t("chat.metaProvider")}: ${message.provider}`);
     if (message.genId) lines.push(`${t("chat.metaGeneration")}: ${message.genId}`);
@@ -364,6 +334,28 @@ export default function ChatScreen() {
     ];
     const next = levels[(levels.indexOf(reasoning) + 1) % levels.length];
     setReasoning(next);
+  };
+
+  /** Fire-and-forget background sync: runs a moment after a send/retry
+   * finishes, pushes the fresh Q/A up and reloads the dialog list when it
+   * lands — new messages get their server ids (so 🔄/✏️/✕ work right away)
+   * without blocking the UI or popping errors. */
+  const backgroundSync = (delayMs = 600) => {
+    setTimeout(() => {
+      void (async () => {
+        try {
+          await runSync();
+          const list = await loadJSON<Dialog[] | null>(DIALOGS_STORAGE_KEY, null);
+          if (Array.isArray(list)) {
+            setDialogs(list);
+            setActiveId((current) =>
+              current && list.some((dialog) => dialog.id === current) ? current : null);
+          }
+        } catch {
+          // Background best-effort: failures surface on the next sync.
+        }
+      })();
+    }, delayMs);
   };
 
   /** Push + pull once and reload the dialog list from storage (keeping the
@@ -634,6 +626,8 @@ export default function ChatScreen() {
         error: !r.ok,
         serverId: r.message_id ?? undefined,
         createdAt: Date.now(),
+        // Exact model that served the retried answer (server reports it).
+        model: r.model ?? null,
         reasoning: r.reasoning ?? null,
         provider: r.provider ?? null,
         genId: r.gen_id ?? null,
@@ -664,6 +658,9 @@ export default function ChatScreen() {
     } finally {
       setRetryingId(null);
       setRetryTarget(null);
+      // Fire-and-forget: nothing to push for a server-side retry, but pull
+      // (and refresh account info) so other devices see the new answer.
+      backgroundSync();
     }
   };
 
@@ -893,7 +890,7 @@ export default function ChatScreen() {
       });
       const reply = completion.choices?.[0]?.message?.content;
       if (!reply || !reply.trim())
-        throw new Error("Empty response from the model.");
+        throw new Error(t("chat.emptyResponse"));
       // Cache warm-up is now opt-in only (🔥 Cache toggle on the server web
       // UI) — no automatic pings from the phone.
       const replyMessage: ChatMessage = {
@@ -901,6 +898,9 @@ export default function ChatScreen() {
         role: "assistant",
         content: reply,
         createdAt: Date.now(),
+        // Exact serving model as OpenRouter reports it (carries ":flex" when
+        // the flex tier answered) — shown in the ⓘ details popup.
+        model: completion.model || (flexOn ? withFlexSuffix(model) : model),
         // Per-message OpenRouter metadata (reasoning effort the user chose,
         // plus the serving provider + exact usage/cost from the response).
         reasoning: reasoning || null,
@@ -947,6 +947,8 @@ export default function ChatScreen() {
       );
     } finally {
       setSending(false);
+      // Fire-and-forget: push the fresh Q/A to the server in the background.
+      backgroundSync();
     }
   };
 
@@ -1179,7 +1181,7 @@ export default function ChatScreen() {
                               style={styles.metaChip}
                             >
                               <ThemedText type="code" style={styles.metaChipText}>
-                                ⓘ {metadataLabel(message)}
+                                ⓘ {metaCaption(message)}
                               </ThemedText>
                             </Pressable>
                           ) : null}

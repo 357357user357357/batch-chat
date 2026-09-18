@@ -17,6 +17,7 @@ import { useTheme } from '@/hooks/use-theme';
 import {
   isBatchModelId,
   listModels,
+  withFlexSuffix,
   type OpenRouterModelInfo,
 } from '@/services/openrouter';
 
@@ -200,6 +201,10 @@ export function ModelBrowser({
         {t('models.count', { count: visible.length })}
       </ThemedText>
 
+      <ThemedText type="small" themeColor="textSecondary">
+        {t('models.flexHint')}
+      </ThemedText>
+
       {error && models.length === 0 ? (
         <ThemedText type="small" style={styles.errorText}>
           {t('models.error')}
@@ -240,7 +245,18 @@ export function ModelBrowser({
                     <ThemedText type="code" themeColor="textSecondary" style={styles.badge}>
                       batch
                     </ThemedText>
-                  ) : null}
+                  ) : (
+                    <Pressable
+                      hitSlop={8}
+                      onPress={() => onSelect?.(withFlexSuffix(model.id))}
+                      accessibilityRole="button"
+                      accessibilityLabel={t('models.useFlex', { model: model.id })}
+                      style={styles.flexBadge}>
+                      <ThemedText type="code" style={styles.flexBadgeText}>
+                        {t('models.flexBadge')}
+                      </ThemedText>
+                    </Pressable>
+                  )}
                 </View>
                 <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
                   {model.id}
@@ -336,6 +352,17 @@ const styles = StyleSheet.create({
     borderRadius: Spacing.one,
     paddingHorizontal: Spacing.one,
     fontSize: 10,
+  },
+  flexBadge: {
+    borderWidth: 1,
+    borderColor: 'rgba(60,135,247,0.55)',
+    backgroundColor: 'rgba(60,135,247,0.14)',
+    borderRadius: Spacing.one,
+    paddingHorizontal: Spacing.one,
+  },
+  flexBadgeText: {
+    fontSize: 10,
+    color: '#3c87f7',
   },
   errorText: {
     color: '#e05252',

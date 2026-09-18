@@ -22,6 +22,7 @@ import {
   PROVIDER_OPENAI,
 } from "@/services/llm-providers";
 import { getCacheDurationSeconds } from "@/services/cache-settings";
+import { splitModelVariant } from "@/services/model-variants";
 
 export type OpenRouterRole = 'system' | 'user' | 'assistant';
 
@@ -160,24 +161,17 @@ export const OPENROUTER_MODEL =
  *     slower). If the provider doesn't offer flex for the model (e.g. some
  *     Astra releases), the request is automatically retried on the standard
  *     tier — so ":flex" is always safe to append for any future model.
+ * Implemented in `model-variants.ts` (pure, unit-tested); re-exported here
+ * for the existing call sites.
  */
-const FLEX_SUFFIX = ':flex';
-
-export function splitModelVariant(model: string): { base: string; flex: boolean } {
-  const trimmed = model.trim();
-  if (trimmed.endsWith(FLEX_SUFFIX)) {
-    return { base: trimmed.slice(0, -FLEX_SUFFIX.length), flex: true };
-  }
-  return { base: trimmed, flex: false };
-}
-
-/** Appends the Flex suffix unless the model already carries it — the suffix
- * self-actualizes through splitModelVariant, so appending it twice would
- * leave a literal ":flex:flex" id that no provider can route. */
-export function withFlexSuffix(model: string): string {
-  const trimmed = model.trim();
-  return trimmed.endsWith(FLEX_SUFFIX) ? trimmed : `${trimmed}${FLEX_SUFFIX}`;
-}
+export {
+  splitModelVariant,
+  withFlexSuffix,
+  withBatchSuffix,
+  isFlexId,
+  isBatchModelId,
+  supportsFlex,
+} from '@/services/model-variants';
 
 function isFlexUnsupportedError(status: number | undefined, body: unknown): boolean {
   // OpenRouter answers 400; strict OpenAI-compatible gateways (pydantic-style
@@ -361,7 +355,24 @@ async function requestWithTimeout(
     }
 
     const raw = await response.json();
-    return { ...(raw as ChatCompletion), raw };
+    // Some models (notably deepseek-r1 family via certain providers) come
+    // back with an empty `content` while the thinking is enabled — the whole
+    // answer may live in `reasoning` or the provider just misbehaves. Retry
+    // once without reasoning before giving up: it's the cheapest fix that
+    // keeps "empty response" errors rare on the phone.
+    const hasContent = (completion: unknown): boolean => {
+      const content = (completion as ChatCompletion | undefined)?.choices?.[0]?.message?.content;
+      return typeof content === 'string' && content.trim().length > 0;
+    };
+    let completion = raw;
+    if (!hasContent(raw) && options.reasoning && options.reasoning !== 'none') {
+      const retry = await post(buildBody(flex, false));
+      if (retry.ok) {
+        const retryRaw = await retry.json();
+        if (hasContent(retryRaw)) completion = retryRaw;
+      }
+    }
+    return { ...(completion as ChatCompletion), raw: completion };
   } finally {
     clearTimeout(timer);
     externalSignal?.removeEventListener('abort', abortListener);
@@ -708,11 +719,6 @@ export type OpenRouterModelInfo = {
   description?: string;
   pricing?: { prompt?: number; completion?: number };
 };
-
-/** True when a model id targets the (cheaper) Batch API (`:batch` suffix). */
-export function isBatchModelId(id: string): boolean {
-  return id.trim().toLowerCase().endsWith(':batch');
-}
 
 /**
  * Fetches the list of models available on OpenRouter for the current key.

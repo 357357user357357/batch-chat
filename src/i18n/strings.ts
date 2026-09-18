@@ -150,6 +150,8 @@ const en = {
   "sync.pairing": "Pairing…",
   "sync.pairFail": "Could not pair",
   "sync.pairedWith": "Synced with {server}",
+  "sync.signedInAs": "Signed in as {account}",
+  "sync.ownerTag": "owner",
   "sync.unpair": "Unpair",
   "sync.unpairConfirmTitle": "Unpair this device?",
   "sync.unpairConfirmBody": "This device will stop syncing until you pair it again.",
@@ -239,6 +241,8 @@ const en = {
   "chat.untitled": "Untitled dialog",
   "chat.noDialogs": 'No conversations yet. Tap "New dialog" to start.',
   "chat.emptyDialog": "Empty conversation — open it and say something.",
+  "chat.emptyResponse":
+    "The model returned an empty answer — it may be overloaded. Tap 🔄 on your message to retry.",
   "chat.you": "You",
   "chat.delete": "Delete dialog",
   "chat.deleteConfirm": "Delete this conversation?",
@@ -251,6 +255,7 @@ const en = {
   "chat.offlineTavily":
     "No internet — opening tavily.com so you can search directly.",
   "chat.metaTitle": "Message details",
+  "chat.metaModel": "Model",
   "chat.metaReasoning": "Reasoning",
   "chat.metaProvider": "Provider",
   "chat.metaGeneration": "Generation",
@@ -261,6 +266,11 @@ const en = {
 
   "models.searchPlaceholder": "Search by name or id…",
   "models.filter.all": "All",
+  "models.filter.flex": "🧊 Flex",
+  "models.flexBadge": "🧊",
+  "models.flexHint":
+    "🧊 Flex = cheaper/slower processing tier. Every non-batch model supports it — tap 🧊 on a row to use that model on Flex.",
+  "models.useFlex": "Use {model} on the Flex tier",
   "models.filter.live": "Live",
   "models.filter.batch": "Batch",
   "models.count": "{count} models",

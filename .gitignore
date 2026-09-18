@@ -56,3 +56,4 @@ example
 # Gradle build intermediates of the local module
 **/android/build/
 **/android/.gradle/
+.test-build/

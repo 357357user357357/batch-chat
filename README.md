@@ -1,5 +1,9 @@
 # Batch Chat 🧮
 
+![tests](https://img.shields.io/badge/unit%20tests-21%20passing-brightgreen) ![platform](https://img.shields.io/badge/platform-Android-blue) ![sync](https://img.shields.io/badge/sync-flexchat.top-4f8cff)
+
+**Latest APK:** https://flexchat.top/downloads/batch-chat.apk · **Links page:** https://flexchat.top/links
+
 Android app for asking batches of questions through the
 [OpenRouter Batch API](https://openrouter.ai/docs/batch-quickstart) — one line =
 one request, ~50% off the model's price — plus a live **Chat** tab.

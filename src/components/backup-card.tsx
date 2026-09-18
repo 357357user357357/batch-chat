@@ -38,11 +38,11 @@ export function BackupCard() {
     setBusy("importing");
     setStatusText(t("backup.importing"));
     try {
-      const outcome = await pickAndRestoreBackup();
+      const { outcome, reason } = await pickAndRestoreBackup();
       if (outcome === "restored") setStatusText(t("backup.importDone"));
       else if (outcome === "invalid") {
         setStatusText("");
-        Alert.alert(t("common.failed"), t("backup.importInvalid"));
+        Alert.alert(t("common.failed"), reason || t("backup.importInvalid"));
       } else {
         setStatusText("");
       }
