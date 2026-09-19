@@ -427,11 +427,11 @@ export default function ChatScreen() {
    *  -synced message (no server id after a sync attempt) is removed locally —
    *  the server never saw it, so the next background push converges. */
   const handleDeleteMessage = async (message: ChatMessage, index: number) => {
-    const removeLocal = () =>
+    const removeLocal = (id: string) =>
       setDialogs((current) =>
         current.map((dialog) =>
           dialog.id === activeId
-            ? { ...dialog, messages: dialog.messages.filter((m) => m.id !== message.id) }
+            ? { ...dialog, messages: dialog.messages.filter((m) => m.id !== id) }
             : dialog,
         ),
       );
@@ -444,7 +444,7 @@ export default function ChatScreen() {
       } else if (!list) {
         // Server unreachable: the message most likely never made it up —
         // don't block the user, remove locally and sync in the background.
-        removeLocal();
+        removeLocal(message.id);
         backgroundSync();
         return;
       } else {
@@ -470,7 +470,7 @@ export default function ChatScreen() {
                 if (!target.serverId) {
                   // Never synced: local removal only, background push carries
                   // the dialog state without it.
-                  removeLocal();
+                  removeLocal(target.id);
                   backgroundSync();
                   return;
                 }
@@ -481,7 +481,7 @@ export default function ChatScreen() {
                   { method: "DELETE", headers: { Authorization: `Bearer ${settings.token}` } },
                 );
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                removeLocal();
+                removeLocal(target.id);
                 backgroundSync();
               } catch (error) {
                 Alert.alert(
