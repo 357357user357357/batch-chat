@@ -23,6 +23,7 @@ import {
 } from "@/services/llm-providers";
 import { getCacheDurationSeconds } from "@/services/cache-settings";
 import { splitModelVariant } from "@/services/model-variants";
+import { maxTokenLimitFromError } from "@/services/token-limits";
 
 export type OpenRouterRole = 'system' | 'user' | 'assistant';
 
@@ -285,12 +286,12 @@ async function requestWithTimeout(
     // chat_completion_full, which reuses one payload for its fallbacks.
     const cachedMessages = withPromptCache(messages, await getCacheDurationSeconds());
 
-    const buildBody = (withFlex: boolean, withReasoning: boolean) =>
+    const buildBody = (withFlex: boolean, withReasoning: boolean, maxTokens?: number) =>
       JSON.stringify({
         model: base,
         messages: cachedMessages,
         temperature: options.temperature,
-        max_tokens: options.max_tokens,
+        max_tokens: maxTokens ?? options.max_tokens,
         usage: { include: true },
         ...(withReasoning && options.reasoning
           ? {
@@ -329,9 +330,10 @@ async function requestWithTimeout(
     if (!response.ok) {
       let detail = await readDetail(response);
       let flexDropped = false;
+      let reasoningActive = Boolean(options.reasoning);
       // Flex tier not available for this model → retry on the standard tier
       if (flex && isFlexUnsupportedError(response.status, detail)) {
-        response = await post(buildBody(false, true));
+        response = await post(buildBody(false, reasoningActive));
         flexDropped = true;
         if (!response.ok) detail = await readDetail(response);
       }
@@ -339,11 +341,25 @@ async function requestWithTimeout(
       // → retry once without it (model default applies).
       if (
         !response.ok &&
-        options.reasoning &&
+        reasoningActive &&
         isReasoningUnsupportedError(response.status, detail)
       ) {
+        reasoningActive = false;
         response = await post(buildBody(flexDropped ? false : flex, false));
         if (!response.ok) detail = await readDetail(response);
+      }
+      // Provider caps max output tokens below what was requested (when the
+      // request omits max_tokens, OpenRouter substitutes the model's catalog
+      // maximum, e.g. "Requested maximum tokens of 131072 exceeds the maximum
+      // output tokens limit: 102400") → retry once clamped to that limit.
+      if (!response.ok && response.status === 400) {
+        const tokenLimit = maxTokenLimitFromError(detail);
+        if (tokenLimit) {
+          response = await post(
+            buildBody(flexDropped ? false : flex, reasoningActive, tokenLimit)
+          );
+          if (!response.ok) detail = await readDetail(response);
+        }
       }
       if (!response.ok) {
         throw new OpenRouterError(

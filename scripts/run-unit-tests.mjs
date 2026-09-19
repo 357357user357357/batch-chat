@@ -17,7 +17,7 @@ const ts = require("typescript");
 
 // Dependency-free modules only — anything importing expo/* or @/storage
 // can't run under plain node.
-const modules = ["model-variants", "message-meta", "backup-parse", "sync-mapping"];
+const modules = ["model-variants", "message-meta", "backup-parse", "sync-mapping", "token-limits"];
 
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
