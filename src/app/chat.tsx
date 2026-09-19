@@ -339,8 +339,10 @@ export default function ChatScreen() {
   /** Fire-and-forget background sync: runs a moment after a send/retry
    * finishes, pushes the fresh Q/A up and reloads the dialog list when it
    * lands — new messages get their server ids (so 🔄/✏️/✕ work right away)
-   * without blocking the UI or popping errors. */
-  const backgroundSync = (delayMs = 600) => {
+   * without blocking the UI or popping errors. Retries a few times with
+   * growing delays so transient network blips still catch up in the
+   * background instead of leaving the message unsynced. */
+  const backgroundSync = (delayMs = 600, attempts = 3) => {
     setTimeout(() => {
       void (async () => {
         try {
@@ -352,7 +354,9 @@ export default function ChatScreen() {
               current && list.some((dialog) => dialog.id === current) ? current : null);
           }
         } catch {
-          // Background best-effort: failures surface on the next sync.
+          // Background best-effort: keep retrying quietly, then surface on
+          // the next sync (manual or after the next send).
+          if (attempts > 1) backgroundSync(delayMs * 4, attempts - 1);
         }
       })();
     }, delayMs);
@@ -369,7 +373,14 @@ export default function ChatScreen() {
       return null;
     }
     try {
-      await runSync();
+      // One silent retry: transient network blips shouldn't dead-end the
+      // user with "not synced" — the background sync catches up anyway.
+      try {
+        await runSync();
+      } catch {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        await runSync();
+      }
       const list = await loadJSON<Dialog[] | null>(DIALOGS_STORAGE_KEY, null);
       if (Array.isArray(list)) {
         setDialogs(list);
@@ -412,14 +423,31 @@ export default function ChatScreen() {
   };
 
   /** Delete one Q/A: tombstones it on the master server (so the web and all
-   *  other devices drop it too) and removes it from the local dialog. */
+   *  other devices drop it too) and removes it from the local dialog. A never
+   *  -synced message (no server id after a sync attempt) is removed locally —
+   *  the server never saw it, so the next background push converges. */
   const handleDeleteMessage = async (message: ChatMessage, index: number) => {
+    const removeLocal = () =>
+      setDialogs((current) =>
+        current.map((dialog) =>
+          dialog.id === activeId
+            ? { ...dialog, messages: dialog.messages.filter((m) => m.id !== message.id) }
+            : dialog,
+        ),
+      );
     let target = message;
     if (!target.serverId) {
       const list = await syncAndReload();
-      if (!list) return;
-      const found = resolveSyncedMessage(list, activeId, message, index);
-      if (!found?.serverId) {
+      const found = list ? resolveSyncedMessage(list, activeId, message, index) : null;
+      if (found?.serverId) {
+        target = found;
+      } else if (!list) {
+        // Server unreachable: the message most likely never made it up —
+        // don't block the user, remove locally and sync in the background.
+        removeLocal();
+        backgroundSync();
+        return;
+      } else {
         Alert.alert(
           t("common.delete"),
           t("chat.deleteNeedsSync") ||
@@ -427,7 +455,6 @@ export default function ChatScreen() {
         );
         return;
       }
-      target = found;
     }
     Alert.alert(
       t("common.delete"),
@@ -440,6 +467,13 @@ export default function ChatScreen() {
           onPress: () => {
             void (async () => {
               try {
+                if (!target.serverId) {
+                  // Never synced: local removal only, background push carries
+                  // the dialog state without it.
+                  removeLocal();
+                  backgroundSync();
+                  return;
+                }
                 const settings = await getSyncSettings();
                 if (!settings) throw new Error(t("chat.deleteNoServer"));
                 const resp = await fetch(
@@ -447,13 +481,8 @@ export default function ChatScreen() {
                   { method: "DELETE", headers: { Authorization: `Bearer ${settings.token}` } },
                 );
                 if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-                setDialogs((current) =>
-                  current.map((dialog) =>
-                    dialog.id === activeId
-                      ? { ...dialog, messages: dialog.messages.filter((m) => m.id !== target.id) }
-                      : dialog,
-                  ),
-                );
+                removeLocal();
+                backgroundSync();
               } catch (error) {
                 Alert.alert(
                   t("common.failed"),
@@ -1643,16 +1672,16 @@ const styles = StyleSheet.create({
     gap: Spacing.one,
   },
   messageDeleteChip: {
-    paddingVertical: 1,
-    paddingHorizontal: 4,
-    borderRadius: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderRadius: 7,
   },
   messageDeleteText: {
-    fontSize: 11,
+    fontSize: 15,
     color: "#e05252",
   },
   messageRetryText: {
-    fontSize: 11,
+    fontSize: 15,
   },
   editOverlay: {
     flex: 1,
@@ -1695,12 +1724,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   metaChip: {
-    paddingVertical: 1,
-    paddingHorizontal: 4,
-    borderRadius: 6,
+    paddingVertical: 3,
+    paddingHorizontal: 6,
+    borderRadius: 7,
   },
   metaChipText: {
-    fontSize: 10,
+    fontSize: 12,
   },
   thinkingRow: {
     flexDirection: "row",

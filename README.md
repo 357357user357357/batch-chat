@@ -1,6 +1,6 @@
 # Batch Chat 🧮
 
-![tests](https://img.shields.io/badge/unit%20tests-21%20passing-brightgreen) ![platform](https://img.shields.io/badge/platform-Android-blue) ![sync](https://img.shields.io/badge/sync-flexchat.top-4f8cff)
+![tests](https://img.shields.io/badge/unit%20tests-24%20passing-brightgreen) ![platform](https://img.shields.io/badge/platform-Android-blue) ![sync](https://img.shields.io/badge/sync-flexchat.top-4f8cff)
 
 **Latest APK:** https://flexchat.top/downloads/batch-chat.apk · **Links page:** https://flexchat.top/links
 
