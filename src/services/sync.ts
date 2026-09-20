@@ -468,12 +468,17 @@ export async function runSync(): Promise<SyncSummary> {
   let nextDialogs = dialogs;
   let nextBatches = batches;
   for (const conv of pullResult.conversations) {
+    // kind determines the section — and a RE-FILED conversation must leave
+    // its old section: drop any stale copy from BOTH lists before adding to
+    // the current one (a conv pulled as chat and later re-filed batch would
+    // otherwise keep haunting the live/chat list forever).
+    nextDialogs = nextDialogs.filter((d) => d.id !== conv.external_id);
+    nextBatches = nextBatches.filter((b) => b.id !== conv.external_id);
+    if (conv.deleted) continue;
     if (conv.kind === "batch") {
-      nextBatches = nextBatches.filter((b) => b.id !== conv.external_id);
-      if (!conv.deleted) nextBatches = [...nextBatches, conversationToHistoryItem(conv)];
+      nextBatches = [...nextBatches, conversationToHistoryItem(conv)];
     } else {
-      nextDialogs = nextDialogs.filter((d) => d.id !== conv.external_id);
-      if (!conv.deleted) nextDialogs = [...nextDialogs, conversationToDialog(conv, makeLocalId)];
+      nextDialogs = [...nextDialogs, conversationToDialog(conv, makeLocalId)];
     }
   }
 
