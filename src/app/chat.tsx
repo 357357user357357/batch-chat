@@ -878,6 +878,62 @@ export default function ChatScreen() {
     // Correct the asking bubble with LaTeX while the answer is being generated.
     void correctQuestionLatex(userMessage.id, text, model);
 
+    // Streaming: the answer bubble appears with the first token and grows as
+    // tokens land. Because bytes keep flowing the whole time, nothing between
+    // the phone and OpenRouter can cut a silent 30-120s `:flex` queue wait
+    // anymore — and the request timeout becomes an idle timeout.
+    let replyId: string | null = null;
+    let lastPaint = 0;
+    const ensureStreamMessage = () => {
+      if (replyId || !activeId) return;
+      replyId = makeId();
+      const streamId = replyId;
+      setDialogs((current) =>
+        current.map((dialog) =>
+          dialog.id === activeId
+            ? {
+                ...dialog,
+                messages: [
+                  ...dialog.messages,
+                  {
+                    id: streamId,
+                    role: "assistant" as const,
+                    content: "",
+                    createdAt: Date.now(),
+                    streaming: true,
+                  },
+                ].slice(-MAX_MESSAGES),
+                updatedAt: Date.now(),
+              }
+            : dialog,
+        ),
+      );
+    };
+    const patchStream = (patch: Partial<ChatMessage>) => {
+      if (!replyId || !activeId) return;
+      const streamId = replyId;
+      setDialogs((current) =>
+        current.map((dialog) =>
+          dialog.id === activeId
+            ? {
+                ...dialog,
+                messages: dialog.messages.map((message) =>
+                  message.id === streamId ? { ...message, ...patch } : message,
+                ),
+                updatedAt: Date.now(),
+              }
+            : dialog,
+        ),
+      );
+    };
+    const onDelta = (content: string) => {
+      ensureStreamMessage();
+      const now = Date.now();
+      if (now - lastPaint < 90) return; // throttle repaints; the final paint is exact
+      lastPaint = now;
+      patchStream({ content });
+    };
+
     const history: OpenRouterMessage[] = nextMessages
       .slice(-HISTORY_WINDOW)
       .map((message) => ({
@@ -916,17 +972,16 @@ export default function ChatScreen() {
         model: flexOn ? withFlexSuffix(model) : model,
         ...(reasoning ? { reasoning } : {}),
         timeoutMs: 120_000,
+        onDelta,
       });
       const reply = completion.choices?.[0]?.message?.content;
       if (!reply || !reply.trim())
         throw new Error(t("chat.emptyResponse"));
       // Cache warm-up is now opt-in only (🔥 Cache toggle on the server web
       // UI) — no automatic pings from the phone.
-      const replyMessage: ChatMessage = {
-        id: makeId(),
-        role: "assistant",
+      const replyMeta: Partial<ChatMessage> = {
         content: reply,
-        createdAt: Date.now(),
+        streaming: false,
         // Exact serving model as OpenRouter reports it (carries ":flex" when
         // the flex tier answered) — shown in the ⓘ details popup.
         model: completion.model || (flexOn ? withFlexSuffix(model) : model),
@@ -940,40 +995,60 @@ export default function ChatScreen() {
         totalTokens: completion.usage?.total_tokens ?? null,
         cost: typeof completion.usage?.cost === "number" ? completion.usage.cost : null,
       };
-      setDialogs((current) =>
-        current.map((dialog) =>
-          dialog.id === activeId
-            ? {
-                ...dialog,
-                messages: [...dialog.messages, replyMessage].slice(
-                  -MAX_MESSAGES,
-                ),
-                updatedAt: Date.now(),
-              }
-            : dialog,
-        ),
-      );
+      if (replyId) {
+        // The streaming bubble is already in the list — finalize it.
+        patchStream(replyMeta);
+      } else {
+        // Nothing ever streamed (e.g. the runtime has no stream support) —
+        // insert the complete reply the classic way.
+        const replyMessage: ChatMessage = {
+          id: makeId(),
+          role: "assistant",
+          content: reply,
+          createdAt: Date.now(),
+          ...replyMeta,
+        };
+        setDialogs((current) =>
+          current.map((dialog) =>
+            dialog.id === activeId
+              ? {
+                  ...dialog,
+                  messages: [...dialog.messages, replyMessage].slice(
+                    -MAX_MESSAGES,
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : dialog,
+          ),
+        );
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      const errorMessage: ChatMessage = {
-        id: makeId(),
-        role: "assistant",
-        content: message,
-        error: true,
-      };
-      setDialogs((current) =>
-        current.map((dialog) =>
-          dialog.id === activeId
-            ? {
-                ...dialog,
-                messages: [...dialog.messages, errorMessage].slice(
-                  -MAX_MESSAGES,
-                ),
-                updatedAt: Date.now(),
-              }
-            : dialog,
-        ),
-      );
+      if (replyId) {
+        // A stream was already painting — turn that bubble into the error
+        // message instead of appending a second one.
+        patchStream({ content: message, error: true, streaming: false });
+      } else {
+        const errorMessage: ChatMessage = {
+          id: makeId(),
+          role: "assistant",
+          content: message,
+          error: true,
+        };
+        setDialogs((current) =>
+          current.map((dialog) =>
+            dialog.id === activeId
+              ? {
+                  ...dialog,
+                  messages: [...dialog.messages, errorMessage].slice(
+                    -MAX_MESSAGES,
+                  ),
+                  updatedAt: Date.now(),
+                }
+              : dialog,
+          ),
+        );
+      }
     } finally {
       setSending(false);
       // Fire-and-forget: push the fresh Q/A to the server in the background.

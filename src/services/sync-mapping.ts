@@ -43,6 +43,8 @@ export type ChatMessage = {
   content: string;
   latexContent?: string;
   error?: boolean;
+  /** True while an assistant reply is still arriving via SSE streaming. */
+  streaming?: boolean;
   /** Server-side message id (assigned by sync) — enables per-message delete. */
   serverId?: number | null;
   /** Creation instant (ms epoch) — shown as DD.MM.YY HH.MM under the bubble. */

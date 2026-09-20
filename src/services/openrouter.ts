@@ -24,6 +24,8 @@ import {
 import { getCacheDurationSeconds } from "@/services/cache-settings";
 import { splitModelVariant } from "@/services/model-variants";
 import { maxTokenLimitFromError } from "@/services/token-limits";
+import { SseChatAccumulator, Utf8ChunkDecoder } from "@/services/sse-stream";
+import { fetch as expoFetch } from "expo/fetch";
 
 export type OpenRouterRole = 'system' | 'user' | 'assistant';
 
@@ -87,6 +89,12 @@ export type ChatRequestOptions = {
   reasoning?: ReasoningEffort;
   timeoutMs?: number;
   signal?: AbortSignal;
+  /** Streaming: called as (contentSoFar, lastDelta) for every SSE chunk. When
+   *  set, the request goes out with `stream: true` and timeoutMs becomes an
+   *  IDLE timeout (reset on every received chunk) — OpenRouter ships
+   *  keep-alive bytes while the model queues, so a 30-120s `:flex` wait can
+   *  no longer trip a total-request abort. */
+  onDelta?: (content: string, delta: string) => void;
 };
 
 export type OpenRouterUsage = {
@@ -260,18 +268,41 @@ export function getApiKey(): string {
   return key;
 }
 
+/** Mid-stream network cut while consuming a streamed 200 response. Retried
+ *  once with the identical payload, then surfaced as a readable error. */
+class StreamCutError extends Error {}
+
+/** The subset of `Response` the fallback chain consumes — both a real fetch
+ *  Response and a completed SSE stream satisfy it. */
+type MinimalResponse = {
+  ok: boolean;
+  status: number;
+  json(): Promise<unknown>;
+  text(): Promise<string>;
+};
+
 async function requestWithTimeout(
   options: ChatRequestOptions,
   messages: OpenRouterMessage[]
 ): Promise<ChatCompletion> {
   const timeoutMs = options.timeoutMs ?? 60_000;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
 
   const localSignal = controller.signal;
   const externalSignal = options.signal;
   const abortListener = () => controller.abort();
   externalSignal?.addEventListener('abort', abortListener, { once: true });
+
+  // One timer, re-armed per attempt — and reset on every received chunk while
+  // streaming (idle-timeout semantics). The original single total-request
+  // timer is what aborted the truncated-body retry after a long flex queue
+  // wait ("fetch failed: The operation was aborted").
+  let timer: ReturnType<typeof setTimeout> | null = null;
+  const armTimer = (ms: number = timeoutMs) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => controller.abort(), ms);
+  };
+  armTimer();
 
   try {
     const key = await resolveApiKey();
@@ -293,6 +324,7 @@ async function requestWithTimeout(
         temperature: options.temperature,
         max_tokens: maxTokens ?? options.max_tokens,
         usage: { include: true },
+        ...(options.onDelta ? { stream: true as const } : {}),
         ...(withReasoning && options.reasoning
           ? {
               reasoning:
@@ -304,18 +336,115 @@ async function requestWithTimeout(
         ...(withFlex ? { service_tier: 'flex' as const } : {}),
       });
 
-    const post = (body: string) =>
-      fetch(chatUrl, {
+    const headers = {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${key}`,
+    };
+
+    // Consumes one streamed 200 response (SSE), painting deltas as they
+    // arrive. Resolves only after the stream ends, so the fallback chain
+    // below can treat it exactly like a buffered response.
+    const streamPost = async (body: string): Promise<MinimalResponse> => {
+      const onDelta = options.onDelta!;
+      const response = await expoFetch(chatUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: `Bearer ${key}`,
-        },
+        headers,
         body,
         signal: localSignal,
       });
+      armTimer(); // headers arrived — restart the idle window
+      if (!response.ok) {
+        const text = await response.text();
+        return {
+          ok: false,
+          status: response.status,
+          json: async () => JSON.parse(text),
+          text: async () => text,
+        };
+      }
+      const accumulator = new SseChatAccumulator();
+      const decoder = new Utf8ChunkDecoder();
+      const reader = response.body?.getReader();
+      if (!reader) {
+        // Runtime without stream support — buffered fallback.
+        const text = await response.text();
+        let parsed: unknown;
+        try {
+          parsed = JSON.parse(text);
+        } catch {
+          throw new StreamCutError('no stream body');
+        }
+        return {
+          ok: true,
+          status: response.status,
+          json: async () => parsed,
+          text: async () => text,
+        };
+      }
+      try {
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          armTimer(); // bytes arrived — the connection is anything but idle
+          const text = decoder.push(value);
+          for (const delta of accumulator.push(text)) {
+            onDelta(accumulator.content, delta);
+          }
+        }
+        // Flush: a final line may lack its newline; a final event may lack
+        // its blank-line terminator.
+        for (const delta of accumulator
+          .push(decoder.flush())
+          .concat(accumulator.flush())) {
+          onDelta(accumulator.content, delta);
+        }
+      } catch (error) {
+        if (localSignal.aborted) throw error; // idle timeout / caller abort — mapped below
+        throw new StreamCutError(
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+      return {
+        ok: true,
+        status: response.status,
+        json: async () => accumulator.toCompletion(),
+        text: async () => accumulator.content,
+      };
+    };
 
-    const readDetail = async (failed: Response): Promise<unknown> => {
+    const post = (body: string): Promise<MinimalResponse> => {
+      armTimer(); // fresh budget per attempt (retries included)
+      return options.onDelta
+        ? streamPost(body)
+        : fetch(chatUrl, {
+            method: 'POST',
+            headers,
+            body,
+            signal: localSignal,
+          });
+    };
+
+    // Streams can be cut mid-answer (relay hiccup, provider restart) — the
+    // same failure the buffered path sees as truncated JSON. One identical
+    // retry, then a readable error.
+    const postWithCutRetry = async (body: string): Promise<MinimalResponse> => {
+      try {
+        return await post(body);
+      } catch (error) {
+        if (!(error instanceof StreamCutError)) throw error;
+        try {
+          return await post(body);
+        } catch (retryError) {
+          throw retryError instanceof StreamCutError
+            ? new OpenRouterError(
+                'The provider dropped the connection mid-answer — on the retry too. Tap retry; the flex tier is flaky under load.',
+              )
+            : retryError;
+        }
+      }
+    };
+
+    const readDetail = async (failed: MinimalResponse): Promise<unknown> => {
       try {
         return await failed.json();
       } catch {
@@ -332,13 +461,13 @@ async function requestWithTimeout(
     let activeReasoning = Boolean(options.reasoning);
     let activeMaxTokens: number | undefined = options.max_tokens;
 
-    let response = await post(buildBody(activeFlex, activeReasoning, activeMaxTokens));
+    let response = await postWithCutRetry(buildBody(activeFlex, activeReasoning, activeMaxTokens));
     if (!response.ok) {
       let detail = await readDetail(response);
       let flexDropped = false;
       // Flex tier not available for this model → retry on the standard tier
       if (flex && isFlexUnsupportedError(response.status, detail)) {
-        response = await post(buildBody(false, activeReasoning, activeMaxTokens));
+        response = await postWithCutRetry(buildBody(false, activeReasoning, activeMaxTokens));
         flexDropped = true;
         if (!response.ok) detail = await readDetail(response);
       }
@@ -351,7 +480,7 @@ async function requestWithTimeout(
         isReasoningUnsupportedError(response.status, detail)
       ) {
         activeReasoning = false;
-        response = await post(buildBody(activeFlex, false, activeMaxTokens));
+        response = await postWithCutRetry(buildBody(activeFlex, false, activeMaxTokens));
         if (!response.ok) detail = await readDetail(response);
       }
       // Provider caps max output tokens below what was requested (when the
@@ -362,7 +491,7 @@ async function requestWithTimeout(
         const tokenLimit = maxTokenLimitFromError(detail);
         if (tokenLimit) {
           activeMaxTokens = tokenLimit;
-          response = await post(buildBody(activeFlex, activeReasoning, tokenLimit));
+          response = await postWithCutRetry(buildBody(activeFlex, activeReasoning, tokenLimit));
           if (!response.ok) detail = await readDetail(response);
         }
       }
@@ -375,17 +504,18 @@ async function requestWithTimeout(
       }
     }
 
-    // A long non-streaming generation (typical for the queued :flex tier —
-    // the connection sits idle for 30-120s before any bytes arrive) can get
-    // cut mid-transfer; the body then parses as empty/truncated and
-    // response.json() throws a bare "JSON Parse error: Unexpected end of
-    // input". Retry once with the identical payload (still under the shared
-    // abort timer) before surfacing a readable error.
+    // A long buffered response (the non-streaming path — `:flex` sits idle
+    // 30-120s before any bytes arrive) can be cut mid-transfer; the body then
+    // parses as empty/truncated and response.json() throws a bare "JSON Parse
+    // error: Unexpected end of input". The streaming path never hits this
+    // (json() returns the assembled stream). Retry once with the identical
+    // payload (fresh abort budget per attempt) before surfacing a readable
+    // error.
     let raw: unknown;
     try {
       raw = await response.json();
     } catch {
-      response = await post(buildBody(activeFlex, activeReasoning, activeMaxTokens));
+      response = await postWithCutRetry(buildBody(activeFlex, activeReasoning, activeMaxTokens));
       try {
         raw = await response.json();
       } catch {
@@ -407,7 +537,7 @@ async function requestWithTimeout(
     };
     let completion = raw;
     if (!hasContent(raw) && options.reasoning && options.reasoning !== 'none') {
-      const retry = await post(buildBody(flex, false));
+      const retry = await postWithCutRetry(buildBody(activeFlex, false, activeMaxTokens));
       if (retry.ok) {
         try {
           const retryRaw = await retry.json();
@@ -418,8 +548,19 @@ async function requestWithTimeout(
       }
     }
     return { ...(completion as ChatCompletion), raw: completion };
+  } catch (error) {
+    if (localSignal.aborted) {
+      // Our abort — idle/total timer or caller. This used to surface as the
+      // cryptic "fetch failed: The operation was aborted".
+      throw new OpenRouterError(
+        externalSignal?.aborted
+          ? 'Request cancelled.'
+          : `No data from the provider for ${Math.round(timeoutMs / 1000)}s — the request was aborted. Tap retry; it usually succeeds on the next attempt.`,
+      );
+    }
+    throw error;
   } finally {
-    clearTimeout(timer);
+    if (timer) clearTimeout(timer);
     externalSignal?.removeEventListener('abort', abortListener);
   }
 }
