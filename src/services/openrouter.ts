@@ -728,6 +728,8 @@ export type BatchOutcome = {
   answer?: string;
   status?: number;
   error?: string;
+  /** Exact model that produced this answer (when the result body carries it). */
+  model?: string;
 };
 
 async function parseError(response: Response): Promise<never> {
@@ -892,7 +894,7 @@ export function extractBatchAnswers(batch: OpenRouterBatch): BatchOutcome[] {
       };
     }
     const content = response.body?.choices?.[0]?.message?.content ?? '';
-    return { custom_id: customId, ok: true, answer: content, status: 200 };
+    return { custom_id: customId, ok: true, answer: content, status: 200, model: response.body?.model ?? undefined };
   });
 }
 

@@ -138,9 +138,19 @@ export function conversationToHistoryItem(conv: PulledConversation): HistoryItem
     if (message.role !== "user") continue;
     reqIndex += 1;
     prompts.push(message.content);
-    const next = conv.messages[i + 1];
-    if (next && next.role === "assistant") {
-      const customId = `req-${reqIndex}`;
+    // Keep ALL assistant answers that directly follow this prompt — web ⚡
+    // Batch chats store one per selected model. The first becomes `req-N`,
+    // the parallels `req-Nb`, `req-Nc`, … (letter suffixes keep the batches
+    // screen's `custom_id → prompt index` strip-non-digits mapping correct).
+    let variant = 0;
+    for (
+      let j = i + 1;
+      j < conv.messages.length && conv.messages[j].role === "assistant";
+      j++, variant++
+    ) {
+      const answer = conv.messages[j];
+      const suffix = variant === 0 ? "" : String.fromCharCode(97 + variant); // b, c, …
+      const customId = `req-${reqIndex}${suffix}`;
       results.push({
         id: `res-${customId}`,
         custom_id: customId,
@@ -148,16 +158,26 @@ export function conversationToHistoryItem(conv: PulledConversation): HistoryItem
           status_code: 200,
           body: {
             id: `res-${customId}`,
-            model: next.model || conv.model || "",
+            model: answer.model || conv.model || "",
             raw: null,
             choices: [
-              { index: 0, message: { role: "assistant", content: next.content }, finish_reason: "stop" },
+              { index: 0, message: { role: "assistant", content: answer.content }, finish_reason: "stop" },
             ],
           },
         },
       });
     }
   }
+
+  // Counts must stay consistent (completed + failed = total) even when a
+  // prompt has several parallel answers: every answer is one synthetic
+  // request, plus one virtual failure per prompt that got no answer at all.
+  const answeredPrompts = new Set(
+    results
+      .map((r) => r.custom_id)
+      .filter((id) => /^req-\d+$/.test(id)),
+  ).size;
+  const failed = prompts.length - answeredPrompts;
 
   const batch: OpenRouterBatch = {
     id: conv.external_id,
@@ -169,9 +189,9 @@ export function conversationToHistoryItem(conv: PulledConversation): HistoryItem
     created_at: Math.floor(createdAt / 1000),
     finalized_at: Math.floor(createdAt / 1000),
     request_counts: {
-      total: prompts.length,
+      total: results.length + failed,
       completed: results.length,
-      failed: prompts.length - results.length,
+      failed,
     },
     usage: null,
     results,

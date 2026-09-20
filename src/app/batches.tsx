@@ -31,6 +31,7 @@ import {
   isBatchTerminal,
   OPENROUTER_BATCH_MODEL,
   waitForBatch,
+  type BatchOutcome,
   type OpenRouterBatch,
   type ReasoningEffort,
 } from "@/services/openrouter";
@@ -82,6 +83,18 @@ function batchSearchText(item: HistoryItem): string {
   return [...item.prompts, ...answers].join("\n");
 }
 
+/** custom_id → prompt index (`req-3` and parallel-variant `req-3b` both → 2;
+ * the strip-non-digits parse intentionally ignores the letter suffix). */
+function promptIndexOf(answer: BatchOutcome): number {
+  return Number((answer.custom_id || "req-1").replace(/\D/g, "")) - 1;
+}
+
+/** ALL answers for one prompt, in result order (web ⚡ Batch stores one per
+ * selected model; sync-mapping names them `req-N`, `req-Nb`, `req-Nc`, …). */
+function answersForPrompt(answers: BatchOutcome[], index: number): BatchOutcome[] {
+  return answers.filter((a) => promptIndexOf(a) === index);
+}
+
 /** Rows: batch_id;model;custom_id;prompt;answer (semicolon-separated, quoted). */
 export function buildCsv(item: HistoryItem): string {
   const answers =
@@ -92,13 +105,18 @@ export function buildCsv(item: HistoryItem): string {
     ["batch_id", "model", "custom_id", "prompt", "answer"],
   ];
   item.prompts.forEach((prompt, index) => {
-    const answer = answers.find((a) => a.custom_id === `req-${index + 1}`);
+    const variants = answersForPrompt(answers, index);
+    const cells = variants.map((a) => {
+      const text = a.ok ? (a.answer ?? "") : (a.error ?? "");
+      // Tag each cell with its model when a prompt has several answers.
+      return variants.length > 1 && a.model ? `[${a.model}] ${text}` : text;
+    });
     rows.push([
       item.id,
       item.model,
       `req-${index + 1}`,
       prompt,
-      answer ? (answer.ok ? (answer.answer ?? "") : (answer.error ?? "")) : "",
+      cells.join("\n---\n"),
     ]);
   });
   return rows
@@ -326,13 +344,16 @@ export default function BatchesScreen() {
     const answers = extractBatchAnswers(item.batch);
     const text = item.prompts
       .map((prompt, index) => {
-        const answer = answers.find((a) => a.custom_id === `req-${index + 1}`);
-        const value = answer
-          ? answer.ok
-            ? (answer.answer ?? "")
-            : `❌ ${answer.error ?? ""}`
-          : "";
-        return `Q: ${prompt}\nA: ${value}`;
+        const variants = answersForPrompt(answers, index);
+        const body = variants
+          .map((a) => {
+            const value = a.ok ? (a.answer ?? "") : `❌ ${a.error ?? ""}`;
+            return variants.length > 1 && a.model
+              ? `[${a.model}] ${value}`
+              : value;
+          })
+          .join("\n⸻\n");
+        return `Q: ${prompt}\nA: ${body}`;
       })
       .join("\n\n");
     await copyTextSafe(t("batches.copyAnswersLabel"), text);
@@ -806,9 +827,9 @@ function BatchCard({
       {answers.length > 0 ? (
         <View style={styles.answers}>
           {answers.map((answer) => {
-            const index =
-              Number((answer.custom_id || "req-1").replace(/\D/g, "")) - 1;
+            const index = promptIndexOf(answer);
             const prompt = item.prompts[index] ?? "";
+            const siblings = answersForPrompt(answers, index);
             return (
               <View key={answer.custom_id} style={styles.answerBlock}>
                 <View style={styles.answerPromptRow}>
@@ -833,6 +854,15 @@ function BatchCard({
                     </ThemedText>
                   </Pressable>
                 </View>
+                {siblings.length > 1 && answer.model ? (
+                  <ThemedText
+                    type="small"
+                    themeColor="textSecondary"
+                    style={styles.answerModel}
+                  >
+                    🤖 {answer.model}
+                  </ThemedText>
+                ) : null}
                 {answer.ok ? (
                   <MathAnswer
                     text={autoDelimitRawLatex(answer.answer ?? "")}
@@ -1032,6 +1062,10 @@ const styles = StyleSheet.create({
   },
   answerBlock: {
     gap: 4,
+  },
+  answerModel: {
+    marginTop: -2,
+    marginBottom: 2,
   },
   answerPromptRow: {
     flexDirection: "row",

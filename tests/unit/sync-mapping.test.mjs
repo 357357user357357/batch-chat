@@ -119,3 +119,33 @@ test('conversationToHistoryItem falls back to the dialog model and counts failur
   assert.equal(item.batch.results[0].response.body.model, 'deepseek/deepseek-v4');
   assert.deepEqual(item.batch.request_counts, { total: 2, completed: 1, failed: 1 });
 });
+
+test('conversationToHistoryItem keeps ALL parallel answers per prompt', () => {
+  // Web ⚡ Batch chats store one assistant message per selected model after
+  // each prompt — every one of them must survive the sync round-trip.
+  const item = conversationToHistoryItem({
+    ...CONV,
+    messages: [
+      { role: 'user', content: 'q1', model: null },
+      { role: 'assistant', content: 'a1-model-a', model: 'a/model-a', id: 2 },
+      { role: 'assistant', content: 'a1-model-b', model: 'b/model-b:flex', id: 3 },
+      { role: 'user', content: 'q2', model: null },
+      { role: 'assistant', content: 'a2-model-a', model: 'a/model-a', id: 5 },
+    ],
+  });
+  assert.deepEqual(item.prompts, ['q1', 'q2']);
+  const ids = item.batch.results.map((r) => r.custom_id);
+  // First answer keeps the exact `req-N` id, parallels get a letter suffix
+  // (the batches screen maps custom_id back to the prompt index by stripping
+  // non-digits, so `req-1b` still lands on prompt q1).
+  assert.deepEqual(ids, ['req-1', 'req-1b', 'req-2']);
+  const bodies = item.batch.results.map((r) => r.response.body);
+  assert.deepEqual(
+    bodies.map((b) => b.choices[0].message.content),
+    ['a1-model-a', 'a1-model-b', 'a2-model-a'],
+  );
+  assert.deepEqual(bodies.map((b) => b.model), ['a/model-a', 'b/model-b:flex', 'a/model-a']);
+  // completed + failed = total stays consistent (no virtual failures here:
+  // both prompts got at least one answer).
+  assert.deepEqual(item.batch.request_counts, { total: 3, completed: 3, failed: 0 });
+});
