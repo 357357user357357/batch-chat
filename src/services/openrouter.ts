@@ -326,26 +326,32 @@ async function requestWithTimeout(
     // Fallback chain, mirroring the server: a rejected flex tier drops only
     // service_tier (the reasoning choice survives); a rejected reasoning param
     // drops only reasoning (flex stays unless it was already dropped).
-    let response = await post(buildBody(flex, Boolean(options.reasoning)));
+    // Track the payload shape as fallbacks adjust it, so a truncated-body
+    // retry can rebuild the exact same request.
+    let activeFlex = flex;
+    let activeReasoning = Boolean(options.reasoning);
+    let activeMaxTokens: number | undefined = options.max_tokens;
+
+    let response = await post(buildBody(activeFlex, activeReasoning, activeMaxTokens));
     if (!response.ok) {
       let detail = await readDetail(response);
       let flexDropped = false;
-      let reasoningActive = Boolean(options.reasoning);
       // Flex tier not available for this model → retry on the standard tier
       if (flex && isFlexUnsupportedError(response.status, detail)) {
-        response = await post(buildBody(false, reasoningActive));
+        response = await post(buildBody(false, activeReasoning, activeMaxTokens));
         flexDropped = true;
         if (!response.ok) detail = await readDetail(response);
       }
+      if (flexDropped) activeFlex = false;
       // Reasoning param rejected (model can't disable / doesn't support it)
       // → retry once without it (model default applies).
       if (
         !response.ok &&
-        reasoningActive &&
+        activeReasoning &&
         isReasoningUnsupportedError(response.status, detail)
       ) {
-        reasoningActive = false;
-        response = await post(buildBody(flexDropped ? false : flex, false));
+        activeReasoning = false;
+        response = await post(buildBody(activeFlex, false, activeMaxTokens));
         if (!response.ok) detail = await readDetail(response);
       }
       // Provider caps max output tokens below what was requested (when the
@@ -355,9 +361,8 @@ async function requestWithTimeout(
       if (!response.ok && response.status === 400) {
         const tokenLimit = maxTokenLimitFromError(detail);
         if (tokenLimit) {
-          response = await post(
-            buildBody(flexDropped ? false : flex, reasoningActive, tokenLimit)
-          );
+          activeMaxTokens = tokenLimit;
+          response = await post(buildBody(activeFlex, activeReasoning, tokenLimit));
           if (!response.ok) detail = await readDetail(response);
         }
       }
@@ -370,7 +375,27 @@ async function requestWithTimeout(
       }
     }
 
-    const raw = await response.json();
+    // A long non-streaming generation (typical for the queued :flex tier —
+    // the connection sits idle for 30-120s before any bytes arrive) can get
+    // cut mid-transfer; the body then parses as empty/truncated and
+    // response.json() throws a bare "JSON Parse error: Unexpected end of
+    // input". Retry once with the identical payload (still under the shared
+    // abort timer) before surfacing a readable error.
+    let raw: unknown;
+    try {
+      raw = await response.json();
+    } catch {
+      response = await post(buildBody(activeFlex, activeReasoning, activeMaxTokens));
+      try {
+        raw = await response.json();
+      } catch {
+        throw new OpenRouterError(
+          'The provider dropped the connection before the full answer arrived ' +
+            '(empty or truncated response). Tap retry — it usually succeeds on the next attempt.',
+          response.status,
+        );
+      }
+    }
     // Some models (notably deepseek-r1 family via certain providers) come
     // back with an empty `content` while the thinking is enabled — the whole
     // answer may live in `reasoning` or the provider just misbehaves. Retry
@@ -384,8 +409,12 @@ async function requestWithTimeout(
     if (!hasContent(raw) && options.reasoning && options.reasoning !== 'none') {
       const retry = await post(buildBody(flex, false));
       if (retry.ok) {
-        const retryRaw = await retry.json();
-        if (hasContent(retryRaw)) completion = retryRaw;
+        try {
+          const retryRaw = await retry.json();
+          if (hasContent(retryRaw)) completion = retryRaw;
+        } catch {
+          // Retry came back truncated too — keep the original completion.
+        }
       }
     }
     return { ...(completion as ChatCompletion), raw: completion };
@@ -753,7 +782,15 @@ export async function listModels(): Promise<OpenRouterModelInfo[]> {
   });
   if (!response.ok) await parseError(response);
 
-  const payload = (await response.json()) as { data?: Array<Record<string, unknown>> };
+  let payload: { data?: Array<Record<string, unknown>> };
+  try {
+    payload = (await response.json()) as { data?: Array<Record<string, unknown>> };
+  } catch {
+    throw new OpenRouterError(
+      'OpenRouter returned a truncated model catalog — please try again.',
+      response.status,
+    );
+  }
   const entries = payload.data ?? [];
   return entries
     .filter((entry) => typeof entry?.id === 'string')
