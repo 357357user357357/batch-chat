@@ -39,6 +39,15 @@ function isBatchModel(model: OpenRouterModelInfo): boolean {
 /** How many interactive suggestions to show while typing. */
 const MAX_SUGGESTIONS = 12;
 
+/** Pinned GLM-5.3 family: always led out in the quick-pick chips (deduped
+ *  against the loaded catalog by id) and used as the fallback chip set when
+ *  `listModels()` fails, so the picker is never empty. */
+const GLM53_QUICK_PICKS: OpenRouterModelInfo[] = [
+  { id: 'z-ai/glm-5.3', name: 'GLM-5.3' },
+  { id: 'z-ai/glm-5.3-flash', name: 'GLM-5.3 Flash' },
+  { id: 'z-ai/glm-5.3-flashx', name: 'GLM-5.3 FlashX' },
+];
+
 /** Rank a model against a query so exact/prefix matches surface first (0 = best). */
 function rankModel(model: OpenRouterModelInfo, q: string): number {
   const id = model.id.toLowerCase();
@@ -85,15 +94,28 @@ export function ModelChips({ mode, value, onChange, visibleCount = 8 }: ModelChi
     void load();
   }, [load]);
 
-  // Quick-pick chips (current mode only), cheapest prompt price first.
+  // Quick-pick chips (current mode only), cheapest prompt price first. The
+  // pinned GLM-5.3 family leads — resolved against the catalog so loaded
+  // entries keep their pricing — and doubles as the fallback chip set when
+  // the catalog fails to load. In batch mode the pins carry the `:batch`
+  // variant, since the batch endpoint is addressed by those catalog ids.
   const chips = useMemo(() => {
-    const inMode = models.filter((model) =>
-      mode === 'batch' ? isBatchModel(model) : !isBatchModel(model)
-    );
-    inMode.sort(
+    const byId = new Map(models.map((model) => [model.id, model]));
+    const pinned = GLM53_QUICK_PICKS.map((stub) => {
+      const variantId =
+        mode === 'batch' && !isBatchModel(stub) ? `${stub.id}:batch` : stub.id;
+      return byId.get(variantId) ?? { ...stub, id: variantId };
+    });
+    const pinnedIds = new Set(pinned.map((model) => model.id));
+    const rest = models
+      .filter((model) =>
+        mode === 'batch' ? isBatchModel(model) : !isBatchModel(model)
+      )
+      .filter((model) => !pinnedIds.has(model.id));
+    rest.sort(
       (a, b) => (a.pricing?.prompt ?? Number.MAX_VALUE) - (b.pricing?.prompt ?? Number.MAX_VALUE)
     );
-    return inMode.slice(0, visibleCount);
+    return [...pinned, ...rest].slice(0, visibleCount);
   }, [models, mode, visibleCount]);
 
   // Interactive suggestions across the whole catalog (batch + live together).

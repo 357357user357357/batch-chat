@@ -20,6 +20,7 @@
 import {
   getActiveProvider,
   PROVIDER_OPENAI,
+  PROVIDER_OPENROUTER,
 } from "@/services/llm-providers";
 import { getCacheDurationSeconds } from "@/services/cache-settings";
 import { splitModelVariant } from "@/services/model-variants";
@@ -155,6 +156,17 @@ const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
 async function providerChatUrl(): Promise<string> {
   const provider = await getActiveProvider();
   return `${provider.base_url.replace(/\/+$/, '')}/chat/completions`;
+}
+
+/** Same for the model catalog: the OpenRouter provider uses the public
+ *  catalog URL; a custom gateway serves it from its own base URL. Base URLs
+ *  should already include the version prefix (`…/v1`) — tolerate ones that
+ *  omit it, so both `https://host/v1` and `https://host` resolve. */
+async function providerModelsUrl(): Promise<string> {
+  const provider = await getActiveProvider();
+  if (provider.id === PROVIDER_OPENROUTER) return OPENROUTER_MODELS_URL;
+  const base = provider.base_url.replace(/\/+$/, '');
+  return `${base.endsWith('/v1') ? base : `${base}/v1`}/models`;
 }
 
 /** Cheaper batch model: 50% off the standard price. */
@@ -516,6 +528,16 @@ async function requestWithTimeout(
       raw = await response.json();
     } catch {
       response = await postWithCutRetry(buildBody(activeFlex, activeReasoning, activeMaxTokens));
+      // The retry can land on a real HTTP error (4xx/5xx) — its body parses
+      // fine as JSON but is not a ChatCompletion, so surface the status
+      // instead of returning the error payload as an answer.
+      if (!response.ok) {
+        throw new OpenRouterError(
+          `OpenRouter request failed with HTTP ${response.status}`,
+          response.status,
+          await readDetail(response)
+        );
+      }
       try {
         raw = await response.json();
       } catch {
@@ -909,9 +931,11 @@ export type OpenRouterModelInfo = {
 };
 
 /**
- * Fetches the list of models available on OpenRouter for the current key.
- * Batch-capable models (`…:batch`) are included in the same response, which
- * lets the UI build separate pickers for live chat and for batches.
+ * Fetches the list of models available on the active provider for the current
+ * key — the OpenRouter catalog for OpenRouter, `<base_url>/models` for any
+ * custom OpenAI-compatible gateway. Batch-capable models (`…:batch`) are
+ * included in the same response, which lets the UI build separate pickers for
+ * live chat and for batches.
  */
 export async function listModels(): Promise<OpenRouterModelInfo[]> {
   const key = await resolveApiKey();
@@ -920,7 +944,7 @@ export async function listModels(): Promise<OpenRouterModelInfo[]> {
       'No API key configured for the selected provider. Add one in the app settings or set EXPO_PUBLIC_OPENROUTER_API_KEY in .env.local.'
     );
   }
-  const response = await fetch(OPENROUTER_MODELS_URL, {
+  const response = await fetch(await providerModelsUrl(), {
     headers: { Authorization: `Bearer ${key}` },
   });
   if (!response.ok) await parseError(response);
