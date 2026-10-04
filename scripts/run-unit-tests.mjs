@@ -17,13 +17,16 @@ const ts = require("typescript");
 
 // Dependency-free modules only — anything importing expo/* or @/storage
 // can't run under plain node.
-const modules = ["model-variants", "message-meta", "backup-parse", "sync-mapping", "token-limits", "sse-stream"];
+const modules = ["model-variants", "message-meta", "backup-parse", "sync-mapping", "token-limits", "sse-stream", "../components/math-segments"];
 
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
 
 for (const name of modules) {
-  const source = readFileSync(join(root, "src/services", `${name}.ts`), "utf8");
+  const sourcePath = name.startsWith("../")
+    ? join(root, "src", `${name.slice(3)}.ts`)
+    : join(root, "src/services", `${name}.ts`);
+  const source = readFileSync(sourcePath, "utf8");
   const compiled = ts.transpileModule(source, {
     compilerOptions: {
       module: ts.ModuleKind.ES2022,
@@ -35,7 +38,8 @@ for (const name of modules) {
     console.error(compiled.diagnostics.map(String).join("\n"));
     process.exit(1);
   }
-  writeFileSync(join(outDir, `${name}.mjs`), compiled.outputText);
+  const outputName = name.startsWith("../") ? name.slice(3).replaceAll("/", "-") : name;
+  writeFileSync(join(outDir, `${outputName}.mjs`), compiled.outputText);
 }
 
 const result = spawnSync(

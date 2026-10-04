@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, StyleSheet, View } from "react-native";
 
 import { MathArticle, type MathArticleHandle } from "@/components/math-article";
-import { containsMath } from "@/components/math-segments";
+import {
+  containsMath,
+  normalizeMathPasteArtifacts,
+} from "@/components/math-segments";
 import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useI18n } from "@/i18n";
@@ -30,7 +33,10 @@ export function MathAnswer({
   const [hasSelection, setHasSelection] = useState(false);
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const articleRef = useRef<MathArticleHandle>(null);
-  const hasMath = useMemo(() => containsMath(text), [text]);
+  // Normalize legacy rendered-math clipboard artifacts at render time. The
+  // caller's original text remains available for exact copy/source actions.
+  const displayText = useMemo(() => normalizeMathPasteArtifacts(text), [text]);
+  const hasMath = useMemo(() => containsMath(displayText), [displayText]);
 
   useEffect(
     () => () => {
@@ -105,7 +111,7 @@ export function MathAnswer({
 
   // No math → plain selectable text (no webview needed).
   if (!hasMath) {
-    const body = <ThemedText type="small" selectable>{text}</ThemedText>;
+    const body = <ThemedText type="small" selectable>{displayText}</ThemedText>;
     if (!onCopy) return body;
     return (
       <View style={styles.container}>
@@ -119,7 +125,7 @@ export function MathAnswer({
     <View style={styles.container}>
       <MathArticle
         ref={articleRef}
-        text={text}
+        text={displayText}
         fontSize={fontSize}
         onCopy={handleMathCopy}
         onSelectionChange={setHasSelection}

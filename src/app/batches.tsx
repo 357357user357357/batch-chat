@@ -1,4 +1,5 @@
 import * as Clipboard from "expo-clipboard";
+import { useFocusEffect } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -243,6 +244,31 @@ export default function BatchesScreen() {
       cancelled = true;
     };
   }, [startPolling]);
+
+  // Sync runs from the Home tab, so reload storage when the Batch tab regains
+  // focus. Without this, a successful phone sync could stay invisible until
+  // the app was restarted.
+  useFocusEffect(
+    useCallback(() => {
+      if (!hydrated) return undefined;
+      let active = true;
+      void loadJSON<HistoryItem[]>(HISTORY_STORAGE_KEY, []).then((items) => {
+        if (!active) return;
+        setHistory(items);
+        setSelectedId((current) =>
+          current && items.some((item) => item.id === current) ? current : null,
+        );
+        for (const item of items) {
+          if (item.batch && !isBatchTerminal(item.batch) && !item.error) {
+            startPolling(item.id, item.prompts);
+          }
+        }
+      });
+      return () => {
+        active = false;
+      };
+    }, [hydrated, startPolling]),
+  );
 
   // Persist history after every change (but not before the initial load).
   useEffect(() => {

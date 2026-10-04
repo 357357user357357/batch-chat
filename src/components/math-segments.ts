@@ -13,6 +13,73 @@ export type MathSegment = { kind: "text" | "math"; value: string };
 const MATH_PATTERN =
   /(\$\$[\s\S]{1,4000}?\$\$|\\\[[\s\S]{1,4000}?\\\]|\\\([\s\S]{1,400}?\\\)|\$[^\s$](?:[^$]{0,398}[^\s$])?\$)/g;
 
+// Rendered KaTeX/MathJax clipboard text can contain one glyph per line plus
+// zero-width/private-use artifacts. Keep this normalization conservative:
+// ordinary Markdown paragraphs stay unchanged, while a paragraph containing
+// several math glyph fragments is joined for display.
+const INVISIBLE_MATH_ARTIFACTS =
+  /[\u200b-\u200f\u202a-\u202e\u2060-\u2064\u206a-\u206f\ufeff\ue000-\uf8ff]/g;
+const MATH_SYMBOLS = /[\u2200-\u22ff\u27c0-\u27ff\u2980-\u29ff\u03c0\u03a0]/u;
+const MATH_PUNCTUATION = /^[()[\]{}.,:;!?=<>~^|/\\]+$/u;
+
+function isMathArtifactLine(line: string): boolean {
+  const value = line.trim();
+  if (!value) return true;
+  return [...value].length <= 2 || MATH_SYMBOLS.test(value) || MATH_PUNCTUATION.test(value);
+}
+
+function joinMathArtifactBlock(lines: string[]): string {
+  let joined = "";
+  for (const line of lines) {
+    const piece = line.trim();
+    if (!piece) continue;
+    if (!joined) {
+      joined = piece;
+    } else if (/^[,.;:!?%)\]}]/u.test(piece) || /[(\[{]$/u.test(joined)) {
+      joined += piece;
+    } else {
+      joined += ` ${piece}`;
+    }
+  }
+  return joined;
+}
+
+/** Repairs rendered-math clipboard artifacts for display without rewriting
+ * the stored message or the text used by copy actions. */
+export function normalizeMathPasteArtifacts(text: string): string {
+  const rawLines = text.replace(/\r\n?/g, "\n").split("\n");
+  const lines = rawLines.map((raw) => ({
+    raw,
+    cleaned: raw.replace(INVISIBLE_MATH_ARTIFACTS, ""),
+  }));
+  const output: string[] = [];
+
+  for (let i = 0; i < lines.length;) {
+    if (!lines[i].raw.trim()) {
+      output.push("");
+      i++;
+      continue;
+    }
+    let end = i;
+    while (end < lines.length && lines[end].raw.trim()) end++;
+    const paragraph = lines.slice(i, end);
+    const firstFragment = paragraph.findIndex(({ cleaned }) => isMathArtifactLine(cleaned));
+    const suffix = firstFragment < 0 ? [] : paragraph.slice(firstFragment);
+    const hasMathSymbol = suffix.some(({ cleaned }) => MATH_SYMBOLS.test(cleaned));
+    const fragmentCount = suffix.filter(({ cleaned }) => isMathArtifactLine(cleaned)).length;
+
+    if (firstFragment >= 0 && fragmentCount >= 3 && hasMathSymbol) {
+      output.push(...paragraph.slice(0, firstFragment).map(({ cleaned }) => cleaned));
+      output.push(joinMathArtifactBlock(suffix.map(({ cleaned }) => cleaned)));
+    } else {
+      output.push(...paragraph.map(({ cleaned }) => cleaned));
+    }
+    i = end;
+  }
+  return output.join("\n");
+}
+
+
 /** ASCII power notation typed like code: `X**2`, `2**10`, `a**(n+1)`. Models
  *  occasionally answer with Python-style powers; converted to `base^{exp}`. */
 const ASCII_POWER_PATTERN =
@@ -239,6 +306,9 @@ function rebuild(text: string, runs: MathAtom[]): string {
  * (`Compute $\int x\,dx$ plus \frac{1}{2}`) renders both parts correctly.
  */
 export function autoDelimitRawLatex(text: string): string {
+  // Normalize before finding bare LaTeX atoms: otherwise a glyph-per-line
+  // clipboard artifact can be mistaken for dozens of separate formulas.
+  text = normalizeMathPasteArtifacts(text);
   // An odd number of `$$` means the text was cut off mid-formula (e.g. a
   // truncated answer). MathJax cannot render the dangling delimiter, and
   // wrapping bare atoms inside it produced garbage like `$$$…${2` — leave
