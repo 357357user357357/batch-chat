@@ -6,15 +6,12 @@
  * three PCs and this phone can all sync the same account with no separate
  * device registry. Push sends every local dialog/batch (plus ids deleted
  * locally since the last sync); pull merges the server's view back in
- * (per-conversation last-write-wins, tombstones remove locally too).
+ * (per-conversation last-write-wins, tombstones remove locally too). Provider
+ * credentials are never included in sync; server and device keys stay separate.
  */
-import {
-  getStoredApiKey,
-  getStoredTavilyApiKey,
-  storeApiKey,
-  storeTavilyApiKey,
-} from "@/services/key-store";
-import { loadJSON, saveJSON } from "@/services/storage";
+import { loadJSON, loadString, saveJSON, saveString } from "@/services/storage";
+import * as Device from "expo-device";
+import * as WebBrowser from "expo-web-browser";
 import {
   conversationToDialog,
   conversationToHistoryItem,
@@ -22,7 +19,13 @@ import {
   type HistoryItem,
   type PulledConversation,
 } from "@/services/sync-mapping";
-import * as WebBrowser from "expo-web-browser";
+import {
+  clearStoredSyncToken,
+  getStoredSyncCredentials,
+  getStoredSyncToken,
+  storeSyncCredentials,
+  storeSyncToken,
+} from "@/services/key-store";
 
 const DIALOGS_STORAGE_KEY = "openrouter.dialogs.v1";
 const BATCHES_STORAGE_KEY = "openrouter.batches.history.v1";
@@ -40,15 +43,12 @@ export type SyncAccount = {
 
 export type SyncSettings = {
   serverUrl: string;
+  /** The bearer token is loaded from SecureStore and never serialized here. */
   token: string;
   lastSyncAt: string | null;
   /** Filled by pairDevice / runSync (best effort — missing info is fine). */
   account?: SyncAccount | null;
 };
-
-import * as Device from "expo-device";
-
-import { loadString, saveString } from "@/services/storage";
 
 const DEVICE_NAME_STORAGE_KEY = "sync.deviceName";
 let cachedDeviceName: string | null = null;
@@ -113,7 +113,30 @@ async function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Re
 }
 
 export async function getSyncSettings(): Promise<SyncSettings | null> {
-  return loadJSON<SyncSettings | null>(SYNC_SETTINGS_KEY, null);
+  const stored = await loadJSON<(SyncSettings & { token?: string }) | null>(
+    SYNC_SETTINGS_KEY,
+    null,
+  );
+  if (!stored) return null;
+
+  // Migrate tokens written by older builds out of AsyncStorage. New builds
+  // never persist bearer credentials in the JS-readable settings object.
+  let token = await getStoredSyncToken();
+  if (!token && stored.token) {
+    if (await storeSyncToken(stored.token)) {
+      token = stored.token;
+      const { token: _legacyToken, ...safeSettings } = stored;
+      await saveJSON(SYNC_SETTINGS_KEY, safeSettings);
+    }
+  }
+  if (!token) return null;
+  return { ...stored, token };
+}
+
+/** Persist sync metadata without placing the bearer token in AsyncStorage. */
+async function saveSyncSettings(settings: SyncSettings): Promise<void> {
+  const { token: _token, ...safeSettings } = settings;
+  await saveJSON(SYNC_SETTINGS_KEY, safeSettings);
 }
 
 // ------------------------------------------------------------- remember me
@@ -122,15 +145,24 @@ type RememberedCredentials = { login: string; password: string };
 
 const REMEMBER_KEY = "sync.rememberCredentials";
 
-/** Login+password kept on the device when "Remember" is checked (null = off). */
+/** Login+password kept in device-only SecureStore when "Remember" is checked. */
 export async function getRememberedCredentials(): Promise<RememberedCredentials | null> {
-  return loadJSON<RememberedCredentials | null>(REMEMBER_KEY, null);
+  const secure = await getStoredSyncCredentials();
+  if (secure) return secure;
+  // Migrate credentials written by older builds out of AsyncStorage.
+  const legacy = await loadJSON<RememberedCredentials | null>(REMEMBER_KEY, null);
+  if (!legacy) return null;
+  if (await storeSyncCredentials(legacy)) await saveJSON(REMEMBER_KEY, null);
+  return legacy;
 }
 
 export async function saveRememberedCredentials(
   credentials: RememberedCredentials | null,
 ): Promise<void> {
-  await saveJSON(REMEMBER_KEY, credentials);
+  if (!(await storeSyncCredentials(credentials))) {
+    throw new Error("Secure storage is unavailable — cannot save credentials safely.");
+  }
+  await saveJSON(REMEMBER_KEY, null);
 }
 
 /**
@@ -184,8 +216,11 @@ export async function pairDevice(
   }
   // Who did we just pair as? (best effort — shown on the sync card)
   const account = await fetchSyncAccount(base, token);
+  if (!token || !(await storeSyncToken(token))) {
+    throw new Error("Secure storage is unavailable — cannot save the sync session safely.");
+  }
   const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null, account };
-  await saveJSON(SYNC_SETTINGS_KEY, settings);
+  await saveSyncSettings(settings);
 }
 
 /** Self-service registration: unique e-mail + mandatory password. The
@@ -235,8 +270,11 @@ export async function completeOAuthFromUrl(url: string): Promise<void> {
     throw new Error("Missing server address for sign-in.");
   }
   const account = await fetchSyncAccount(base, token);
+  if (!(await storeSyncToken(token))) {
+    throw new Error("Secure storage is unavailable — cannot save the sync session safely.");
+  }
   const settings: SyncSettings = { serverUrl: base, token, lastSyncAt: null, account };
-  await saveJSON(SYNC_SETTINGS_KEY, settings);
+  await saveSyncSettings(settings);
   await saveJSON(OAUTH_PENDING_KEY, null);
 }
 
@@ -300,6 +338,7 @@ async function passwordLogin(base: string, password: string): Promise<string> {
 }
 
 export async function unpairDevice(): Promise<void> {
+  await clearStoredSyncToken();
   await saveJSON(SYNC_SETTINGS_KEY, null);
   await saveJSON(SYNC_SNAPSHOT_KEY, null);
   await saveRememberedCredentials(null);
@@ -390,13 +429,6 @@ export async function runSync(): Promise<SyncSummary> {
     "X-Device-Name": deviceName,
   };
 
-  // Offer this device's provider keys so the server can adopt any it lacks
-  // (unified OpenRouter/Tavily keys across phone + server).
-  const [openrouterKey, tavilyKey] = await Promise.all([
-    getStoredApiKey(),
-    getStoredTavilyApiKey(),
-  ]);
-
   const pushResp = await fetchWithTimeout(`${settings.serverUrl}/api/sync/push`, {
     method: "POST",
     headers,
@@ -434,10 +466,6 @@ export async function runSync(): Promise<SyncSummary> {
         updated_at: new Date(b.updatedAt ?? b.createdAt).toISOString(),
       })),
       deleted_external_ids: deletedIds,
-      keys: {
-        openrouter_api_key: openrouterKey ?? "",
-        tavily_api_key: tavilyKey ?? "",
-      },
     }),
   });
   if (!pushResp.ok) throw new Error(await syncErrorMessage(pushResp));
@@ -454,16 +482,7 @@ export async function runSync(): Promise<SyncSummary> {
   const pullResult = (await pullResp.json()) as {
     server_time: string;
     conversations: PulledConversation[];
-    keys?: { openrouter_api_key?: string; tavily_api_key?: string };
   };
-
-  // Adopt any keys the server already has that this device is missing.
-  if (pullResult.keys?.openrouter_api_key && !(await getStoredApiKey())) {
-    await storeApiKey(pullResult.keys.openrouter_api_key);
-  }
-  if (pullResult.keys?.tavily_api_key && !(await getStoredTavilyApiKey())) {
-    await storeTavilyApiKey(pullResult.keys.tavily_api_key);
-  }
 
   let nextDialogs = dialogs;
   let nextBatches = batches;
@@ -498,7 +517,7 @@ export async function runSync(): Promise<SyncSummary> {
     saveJSON(DIALOGS_STORAGE_KEY, nextDialogs),
     saveJSON(BATCHES_STORAGE_KEY, nextBatches),
     saveJSON(SYNC_SNAPSHOT_KEY, nextSnapshot),
-    saveJSON(SYNC_SETTINGS_KEY, nextSettings),
+    saveSyncSettings(nextSettings),
   ]);
 
   return {
