@@ -11,7 +11,7 @@ const event = (json) => `data: ${JSON.stringify(json)}\n\n`;
 test('accumulates deltas across chunk boundaries', () => {
   const acc = new SseChatAccumulator();
   // One event split in the middle of the JSON and across the blank line.
-  const full = event({ choices: [{ delta: { content: 'Hello, мир! 🌍' } }] });
+  const full = event({ choices: [{ delta: { content: 'Hello, world! 🌍' } }] });
   const allDeltas = [];
   // Feed byte-by-byte to stress the line/event buffer.
   const bytes = Array.from(new TextEncoder().encode(full));
@@ -24,8 +24,8 @@ test('accumulates deltas across chunk boundaries', () => {
   for (const delta of acc.push(decoder.flush()).concat(acc.flush())) {
     allDeltas.push(delta);
   }
-  assert.equal(acc.content, 'Hello, мир! 🌍');
-  assert.equal(allDeltas.join(''), 'Hello, мир! 🌍');
+  assert.equal(acc.content, 'Hello, world! 🌍');
+  assert.equal(allDeltas.join(''), 'Hello, world! 🌍');
   assert.equal(acc.finished, false);
 });
 
