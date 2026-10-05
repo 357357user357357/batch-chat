@@ -32,6 +32,7 @@ import {
     formatMessageDate,
     hasReplyMetadata,
     metadataLabel,
+    shortModelName,
 } from "@/services/message-meta";
 import type { ChatMessage, Dialog } from "@/services/sync-mapping";
 import {
@@ -304,7 +305,16 @@ export default function ChatScreen() {
    * provider, generation id and the prompt/completion token split + cost. */
   const showMessageMetadata = (message: ChatMessage) => {
     const lines: string[] = [];
-    if (message.model) lines.push(`${t("chat.metaModel")}: ${message.model}`);
+    if (message.model) {
+      // Friendly name first, exact id kept for provenance when it differs
+      // ("GLM-5.3 Flash (custom:z-ai/glm-5.3-flash)").
+      const short = shortModelName(message.model);
+      lines.push(
+        short && short !== message.model
+          ? `${t("chat.metaModel")}: ${short} (${message.model})`
+          : `${t("chat.metaModel")}: ${message.model}`,
+      );
+    }
     if (message.reasoning) lines.push(`${t("chat.metaReasoning")}: ${message.reasoning}`);
     if (message.provider) lines.push(`${t("chat.metaProvider")}: ${message.provider}`);
     if (message.genId) lines.push(`${t("chat.metaGeneration")}: ${message.genId}`);

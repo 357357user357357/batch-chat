@@ -26,6 +26,7 @@ import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
 import { saveTextFile, type SaveOutcome } from "@/services/files";
+import { shortModelName } from "@/services/message-meta";
 import {
   createBatch,
   extractBatchAnswers,
@@ -753,7 +754,7 @@ export default function BatchesScreen() {
                       themeColor="textSecondary"
                       numberOfLines={1}
                     >
-                      {item.model}
+                      {shortModelName(item.model) ?? item.model}
                     </ThemedText>
                     <ThemedText type="code" themeColor="textSecondary">
                       {formatTime(item.createdAt)} ·{" "}
@@ -810,7 +811,7 @@ function BatchCard({
       <View style={styles.cardHeader}>
         <View style={styles.cardHeaderText}>
           <ThemedText type="smallBold" numberOfLines={1}>
-            {item.model}
+            {shortModelName(item.model) ?? item.model}
           </ThemedText>
           <ThemedText type="code" themeColor="textSecondary">
             {formatTime(item.createdAt)} · {item.id.slice(0, 18)}…
@@ -886,7 +887,7 @@ function BatchCard({
                     themeColor="textSecondary"
                     style={styles.answerModel}
                   >
-                    🤖 {answer.model}
+                    🤖 {shortModelName(answer.model) ?? answer.model}
                   </ThemedText>
                 ) : null}
                 {answer.ok ? (

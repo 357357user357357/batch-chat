@@ -14,7 +14,11 @@ export type MessageMetaSource = {
   provider?: string | null;
 };
 
+/** Server-side gateway prefixes that ride inside the stored model id. */
+const GATEWAY_PREFIXES = ["custom:", "vertex:", "bedrock:"];
+
 const FLEX_MARK = "🧊";
+const BATCH_MARK = "⚡";
 
 /** True when the reply carries any usage/cost info worth showing. */
 export function hasReplyMetadata(message: MessageMetaSource): boolean {
@@ -47,20 +51,33 @@ export function formatCost(cost: number | null | undefined): string | null {
 }
 
 /**
- * Short model label for a bubble line: drops the vendor prefix
- * ("anthropic/claude-x" → "claude-x") and marks the flex tier
- * ("deepseek/deepseek-v4:flex" → "deepseek-v4 🧊").
+ * Short model label for a bubble line: drops the gateway prefix
+ * ("custom:z-ai/glm-5.3-flash" → "glm-5.3-flash"), the vendor prefix
+ * ("anthropic/claude-x" → "claude-x"), and marks the serving tier
+ * ("deepseek/deepseek-v4:flex" → "deepseek-v4 🧊",
+ *  "z-ai/glm-5.3:batch" → "glm-5.3 ⚡").
  */
 export function shortModelName(model: string | null | undefined): string | null {
   if (!model) return null;
-  const trimmed = model.trim();
+  let trimmed = model.trim();
   if (!trimmed) return null;
+  for (const prefix of GATEWAY_PREFIXES) {
+    if (trimmed.startsWith(prefix)) {
+      trimmed = trimmed.slice(prefix.length);
+      break;
+    }
+  }
   const withoutFlex = trimmed.endsWith(":flex")
     ? trimmed.slice(0, -":flex".length)
     : trimmed;
-  const base = withoutFlex.split("/").pop() ?? withoutFlex;
+  const withoutBatch = withoutFlex.endsWith(":batch")
+    ? withoutFlex.slice(0, -":batch".length)
+    : withoutFlex;
+  const base = withoutBatch.split("/").pop() ?? withoutBatch;
   const flex = withoutFlex.length !== trimmed.length;
-  return flex ? `${base} ${FLEX_MARK}` : base;
+  const batch = withoutBatch.length !== withoutFlex.length;
+  const marks = `${flex ? ` ${FLEX_MARK}` : ""}${batch ? ` ${BATCH_MARK}` : ""}`;
+  return marks ? `${base}${marks}` : base;
 }
 
 /** "12.09.26 14:03" — same format the server web UI shows. */

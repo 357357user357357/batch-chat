@@ -35,6 +35,16 @@ test('shortModelName drops the vendor prefix and marks flex', () => {
   assert.equal(shortModelName('  '), null);
 });
 
+test('shortModelName strips gateway prefixes and marks batch tier', () => {
+  assert.equal(shortModelName('custom:z-ai/glm-5.3-flash'), 'glm-5.3-flash');
+  assert.equal(shortModelName('vertex:gemma-3'), 'gemma-3');
+  assert.equal(shortModelName('bedrock:meta/llama-4'), 'llama-4');
+  assert.equal(shortModelName('z-ai/glm-5.3:batch'), 'glm-5.3 ⚡');
+  assert.equal(shortModelName('anthropic/claude-fable-5.1:batch'), 'claude-fable-5.1 ⚡');
+  assert.equal(shortModelName('custom:z-ai/glm-5.3:batch'), 'glm-5.3 ⚡');
+  assert.equal(shortModelName('plain-id'), 'plain-id');
+});
+
 test('formatMessageDate uses DD.MM.YY HH.MM in local time', () => {
   // Built from local components so the assertion is timezone-independent.
   const ts = new Date(2026, 8, 12, 14, 3).getTime();
