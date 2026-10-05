@@ -758,6 +758,8 @@ export type BatchOutcome = {
   usage?: OpenRouterUsage;
   /** Provider slug that actually served this answer, when present. */
   provider?: string;
+  /** OpenRouter request id for this result (provenance in the ⓘ popup). */
+  requestId?: string;
 };
 
 async function parseError(response: Response): Promise<never> {
@@ -922,6 +924,7 @@ export function extractBatchAnswers(batch: OpenRouterBatch): BatchOutcome[] {
         ok: false,
         status: response?.status_code,
         error: response ? `HTTP ${response.status_code}` : 'No response',
+        requestId: response?.request_id ?? undefined,
       };
     }
     const content = response.body?.choices?.[0]?.message?.content ?? '';
@@ -933,6 +936,7 @@ export function extractBatchAnswers(batch: OpenRouterBatch): BatchOutcome[] {
       model: response.body?.model ?? undefined,
       usage: response.body?.usage ?? undefined,
       provider: response.body?.provider ?? undefined,
+      requestId: response.request_id ?? undefined,
     };
   });
 }

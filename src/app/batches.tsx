@@ -34,6 +34,7 @@ import {
 } from "@/services/model-names";
 import {
   batchTotalsLabel,
+  formatCost,
   metadataStatsLabel,
 } from "@/services/message-meta";
 import {
@@ -381,6 +382,52 @@ export default function BatchesScreen() {
     }
   };
 
+  /** ⓘ details popup for one batch answer — the same fields as the chat
+   * message-details Alert, plus batch/request provenance. Opens on tap of
+   * the answer's stats line (or its ❌ error line for failed answers). */
+  const showAnswerMetadata = (item: HistoryItem, answer: BatchOutcome) => {
+    const lines: string[] = [];
+    if (answer.model) {
+      // Friendly name first, exact id kept for provenance when it differs.
+      const short = modelDisplayName(answer.model);
+      lines.push(
+        short && short !== answer.model
+          ? `${t("chat.metaModel")}: ${short} (${answer.model})`
+          : `${t("chat.metaModel")}: ${answer.model}`,
+      );
+    }
+    if (answer.provider)
+      lines.push(`${t("chat.metaProvider")}: ${answer.provider}`);
+    const usage = answer.usage;
+    if (
+      usage &&
+      (usage.total_tokens != null ||
+        usage.prompt_tokens != null ||
+        usage.completion_tokens != null)
+    ) {
+      lines.push(
+        `${t("chat.metaTokens")}: ${usage.total_tokens ?? "—"}\n` +
+          `  ${t("chat.metaPrompt")}: ${usage.prompt_tokens ?? "—"}\n` +
+          `  ${t("chat.metaCompletion")}: ${usage.completion_tokens ?? "—"}`,
+      );
+    } else if (answer.ok) {
+      // Old batches (pre accounting) and providers that skip usage: say so
+      // instead of leaving the tokens/cost rows silently missing.
+      lines.push(t("batches.noUsage"));
+    }
+    const cost = formatCost(usage?.cost);
+    if (cost) lines.push(`${t("chat.metaCost")}: ${cost}`);
+    if (answer.requestId)
+      lines.push(`${t("chat.metaGeneration")}: ${answer.requestId}`);
+    lines.push(`${t("batches.request")}: ${answer.custom_id}`);
+    if (!answer.ok) {
+      if (answer.status) lines.push(`HTTP ${answer.status}`);
+      if (answer.error) lines.push(`${t("common.failed")}: ${answer.error}`);
+    }
+    lines.push(`${t("batches.batch")}: ${item.id}`);
+    Alert.alert(t("chat.metaTitle"), lines.join("\n"));
+  };
+
   const copyAllAnswers = async (item: HistoryItem) => {
     if (!item.batch) return;
     const answers = extractBatchAnswers(item.batch);
@@ -572,6 +619,7 @@ export default function BatchesScreen() {
               onSaveCsv={() => saveCsv(selectedItem)}
               onCopyPrompt={copyPrompt}
               onCopyAnswer={copyAnswerQuiet}
+              onAnswerInfo={(answer) => showAnswerMetadata(selectedItem, answer)}
               onRemove={() => removeItem(selectedItem.id)}
             />
           </ThemedView>
@@ -805,6 +853,8 @@ type BatchCardProps = {
   onCopyPrompt: (prompt: string) => void;
   /** Quiet copy (no dialog): the MathAnswer footer button shows "✓ Copied". */
   onCopyAnswer: (answer: string) => void;
+  /** ⓘ details popup for one answer (same fields as chat's popup). */
+  onAnswerInfo: (answer: BatchOutcome) => void;
   onRemove: () => void;
 };
 
@@ -814,6 +864,7 @@ function BatchCard({
   onSaveCsv,
   onCopyPrompt,
   onCopyAnswer,
+  onAnswerInfo,
   onRemove,
 }: BatchCardProps) {
   const { t } = useI18n();
@@ -914,13 +965,17 @@ function BatchCard({
                   </Pressable>
                 </View>
                 {stats ? (
-                  <ThemedText
-                    type="small"
-                    themeColor="textSecondary"
+                  <Pressable
+                    onPress={() => onAnswerInfo(answer)}
+                    hitSlop={6}
                     style={styles.answerModel}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("chat.metaTitle")}
                   >
-                    🤖 {stats}
-                  </ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      🤖 {stats} ⓘ
+                    </ThemedText>
+                  </Pressable>
                 ) : null}
                 {answer.ok ? (
                   <MathAnswer
@@ -928,9 +983,14 @@ function BatchCard({
                     onCopy={() => onCopyAnswer(answer.answer ?? "")}
                   />
                 ) : (
-                  <ThemedText type="small" style={styles.errorText}>
-                    ❌ {answer.error ?? t("batches.noAnswer")}
-                  </ThemedText>
+                  <Pressable
+                    onPress={() => onAnswerInfo(answer)}
+                    hitSlop={6}
+                  >
+                    <ThemedText type="small" style={styles.errorText}>
+                      ❌ {answer.error ?? t("batches.noAnswer")}
+                    </ThemedText>
+                  </Pressable>
                 )}
               </View>
             );
@@ -1125,6 +1185,7 @@ const styles = StyleSheet.create({
   answerModel: {
     marginTop: -2,
     marginBottom: 2,
+    alignSelf: "flex-start",
   },
   answerPromptRow: {
     flexDirection: "row",

@@ -194,6 +194,10 @@ const en = {
   "batches.doneCount": "{completed}/{total} done",
   "batches.errorsCount": " · {failed} errors",
   "batches.noAnswer": "no answer",
+  "batches.noUsage":
+    "No usage accounting — batches created before the app update carry none; new batches report it.",
+  "batches.batch": "Batch",
+  "batches.request": "Request",
   "batches.copyAll": "Copy all",
   "batches.saveCsv": "Save .csv",
   "batches.delete": "Delete",
