@@ -139,6 +139,41 @@ export function metadataStatsLabel(message: MessageMetaSource): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
+/** Structural subset of a batch answer that usage attribution needs —
+ * keeps this helper pure (no openrouter.ts import, which the unit-test
+ * harness cannot compile). */
+export type UsageBearer = { ok: boolean; usage?: unknown };
+
+/** True when the object carries a usable total — at least one numeric
+ * total token count or cost, the fields the UI renders (typed `unknown`
+ * upstream, so parsed defensively). */
+export function hasUsageTotals(usage: unknown): boolean {
+  if (!usage || typeof usage !== "object") return false;
+  const u = usage as Record<string, unknown>;
+  return (
+    typeof u.total_tokens === "number" || typeof u.cost === "number"
+  );
+}
+
+/**
+ * Providers report batch accounting either per result
+ * (`response.body.usage`) or only as a batch-level aggregate on the batch
+ * object. When every answer lacks per-result usage, exactly one request
+ * succeeded, and the batch carries usable totals, that aggregate IS the
+ * single request's usage — attribute it so the per-answer stats line and
+ * the details popup show tokens/cost. Multi-answer batches keep their
+ * exact batch total on the card's Σ line instead of a fabricated split.
+ */
+export function attributeBatchUsage<T extends UsageBearer>(
+  answers: T[],
+  batchUsage: unknown,
+): T[] {
+  if (!hasUsageTotals(batchUsage)) return answers;
+  if (answers.length !== 1 || !answers[0].ok) return answers;
+  if (answers[0].usage !== undefined) return answers;
+  return [{ ...answers[0], usage: batchUsage }];
+}
+
 /** Aggregate "Σ …" line for a whole batch, parsed defensively from the batch
  * object's `usage` field (typed `unknown` upstream), e.g.
  * "Σ 36.4k tok · $0.0123". Returns null when nothing usable is present. */

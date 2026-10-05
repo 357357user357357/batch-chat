@@ -102,7 +102,31 @@ test('conversationToHistoryItem rebuilds a completed batch with per-result model
   // The assistant's own model wins over the conversation-level one — the
   // per-result flex marker survives the sync round-trip.
   assert.equal(result.response.body.model, 'deepseek/deepseek-v4:flex');
+  // Server-side accounting rides along so Batch-tab answers show tokens/
+  // cost/provider details like live-chat bubbles do.
+  assert.deepEqual(result.response.body.usage, {
+    prompt_tokens: 100,
+    completion_tokens: 200,
+    total_tokens: 300,
+    cost: 0.0021,
+  });
+  assert.equal(result.response.body.provider, 'Novita');
+  assert.equal(result.response.request_id, 'gen-123');
   assert.deepEqual(item.batch.request_counts, { total: 1, completed: 1, failed: 0 });
+});
+
+test('conversationToHistoryItem omits usage when the server reports none', () => {
+  const item = conversationToHistoryItem({
+    ...CONV,
+    messages: [
+      { role: 'user', content: 'q1', model: null },
+      { role: 'assistant', content: 'a1', model: null, id: 2 },
+    ],
+  });
+  const result = item.batch.results[0];
+  assert.equal(result.response.body.usage, undefined);
+  assert.equal(result.response.body.provider, undefined);
+  assert.equal(result.response.request_id, undefined);
 });
 
 test('conversationToHistoryItem falls back to the dialog model and counts failures', () => {

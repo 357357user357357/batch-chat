@@ -2,11 +2,13 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  attributeBatchUsage,
   batchTotalsLabel,
   formatCost,
   formatMessageDate,
   formatTokens,
   hasReplyMetadata,
+  hasUsageTotals,
   metadataLabel,
   metadataStatsLabel,
   normalizeModelKey,
@@ -92,6 +94,53 @@ test('metadataStatsLabel omits the date and keeps model, tokens, cost', () => {
     'glm-5.3-flash · 850 tok · $0',
   );
   assert.equal(metadataStatsLabel({}), null);
+});
+
+test('hasUsageTotals / attributeBatchUsage — batch-level accounting attribution', () => {
+  const batchUsage = { prompt_tokens: 20, completion_tokens: 40, total_tokens: 60, cost: 0.000225 };
+
+  assert.equal(hasUsageTotals(batchUsage), true);
+  assert.equal(hasUsageTotals({ total_tokens: 60 }), true);
+  assert.equal(hasUsageTotals({ cost: 0.5 }), true);
+  assert.equal(hasUsageTotals({ prompt_tokens: 20 }), false);
+  assert.equal(hasUsageTotals({}), false);
+  assert.equal(hasUsageTotals(null), false);
+  assert.equal(hasUsageTotals('nope'), false);
+
+  // Single ok answer without its own usage → the exact batch aggregate is
+  // attributed to it (it IS that request's accounting).
+  const single = [{ custom_id: 'req-1', ok: true, answer: 'hi' }];
+  const attributed = attributeBatchUsage(single, batchUsage);
+  assert.equal(attributed.length, 1);
+  assert.equal(attributed[0].usage, batchUsage);
+  assert.notEqual(attributed[0], single[0]); // copy, original untouched
+  assert.equal(single[0].usage, undefined);
+
+  // Answer that already carries per-result usage → left alone.
+  const own = [{ custom_id: 'req-1', ok: true, usage: { total_tokens: 5 } }];
+  assert.equal(attributeBatchUsage(own, batchUsage), own);
+
+  // Multi-answer batches → no fabricated split; Σ line carries the total.
+  const multi = [
+    { custom_id: 'req-1', ok: true, answer: 'a' },
+    { custom_id: 'req-2', ok: true, answer: 'b' },
+  ];
+  assert.equal(attributeBatchUsage(multi, batchUsage), multi);
+
+  // Only failure(s) → nothing to attribute.
+  const failed = [{ custom_id: 'req-1', ok: false, error: 'HTTP 429' }];
+  assert.equal(attributeBatchUsage(failed, batchUsage), failed);
+
+  // Batch without usable totals → untouched.
+  const lonely = [{ custom_id: 'req-1', ok: true, answer: 'x' }];
+  assert.equal(attributeBatchUsage(lonely, { prompt_tokens: 3 }), lonely);
+  assert.equal(attributeBatchUsage(lonely, null), lonely);
+
+  // Generic over the input type: extra fields survive the copy.
+  const rich = [{ custom_id: 'req-1', ok: true, model: 'm', provider: 'p' }];
+  const richOut = attributeBatchUsage(rich, batchUsage);
+  assert.equal(richOut[0].model, 'm');
+  assert.equal(richOut[0].provider, 'p');
 });
 
 test('batchTotalsLabel sums batch usage defensively', () => {

@@ -151,18 +151,39 @@ export function conversationToHistoryItem(conv: PulledConversation): HistoryItem
       const answer = conv.messages[j];
       const suffix = variant === 0 ? "" : String.fromCharCode(97 + variant); // b, c, …
       const customId = `req-${reqIndex}${suffix}`;
+      // Carry the server's per-message accounting into the synthetic result,
+      // so Batch-tab answers show the same tokens/cost/provider details as
+      // live-chat bubbles (extractBatchAnswers reads exactly these fields).
+      const hasTokens =
+        typeof answer.total_tokens === "number" ||
+        typeof answer.tokens_prompt === "number" ||
+        typeof answer.tokens_completion === "number";
+      const usage =
+        hasTokens || typeof answer.cost === "number"
+          ? {
+              prompt_tokens: answer.tokens_prompt ?? 0,
+              completion_tokens: answer.tokens_completion ?? 0,
+              total_tokens: answer.total_tokens ?? 0,
+              ...(typeof answer.cost === "number"
+                ? { cost: answer.cost }
+                : {}),
+            }
+          : undefined;
       results.push({
         id: `res-${customId}`,
         custom_id: customId,
         response: {
           status_code: 200,
+          request_id: answer.gen_id ?? undefined,
           body: {
             id: `res-${customId}`,
             model: answer.model || conv.model || "",
+            provider: answer.provider ?? undefined,
             raw: null,
             choices: [
               { index: 0, message: { role: "assistant", content: answer.content }, finish_reason: "stop" },
             ],
+            usage,
           },
         },
       });

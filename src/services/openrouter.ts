@@ -143,7 +143,10 @@ export type BatchResult = {
  * Asynchronous Batch API: 50% of the model's per-token price, 24h window.
  * https://openrouter.ai/docs/batch-quickstart
  */
-const OPENROUTER_BATCH_URL = 'https://openrouter.ai/api/beta/batches';
+// Documented Batch API root (the old /api/beta/batches preview predates
+// batch-level usage accounting — completed batches reported no `usage` at
+// all through it, so tokens/cost never reached the UI).
+const OPENROUTER_BATCH_URL = 'https://openrouter.ai/api/v1/batches';
 
 /** Full catalog of models available on OpenRouter (used for pickers). */
 const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
@@ -851,7 +854,12 @@ export async function getBatch(batchId: string): Promise<OpenRouterBatch> {
     });
     if (response.ok) return (await response.json()) as OpenRouterBatch;
 
-    const retriable = response.status === 404 || response.status >= 500;
+    // Retriable: transient 404 (the API can occasionally 404 a batch right
+    // after it was created), 5xx — and 403, which the WAF in front of the
+    // API returns for some egress IPs ("Access denied by security policy");
+    // when the client's route rotates exits, the next attempt often passes.
+    const retriable =
+      response.status === 404 || response.status === 403 || response.status >= 500;
     if (retriable && attempt < maxAttempts) {
       await delay(1500 * attempt);
       continue;

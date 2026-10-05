@@ -33,13 +33,16 @@ import {
     subscribeModelNames,
 } from "@/services/model-names";
 import {
+  attributeBatchUsage,
   batchTotalsLabel,
   formatCost,
+  hasUsageTotals,
   metadataStatsLabel,
 } from "@/services/message-meta";
 import {
   createBatch,
   extractBatchAnswers,
+  getBatch,
   isBatchTerminal,
   OPENROUTER_BATCH_MODEL,
   waitForBatch,
@@ -65,6 +68,9 @@ type HistoryItem = {
   updatedAt?: number;
   batch: OpenRouterBatch | null;
   error?: string;
+  /** Set after one usage-backfill GET for pre-update completed batches, so
+   * the attempt never repeats on every app start. */
+  usageBackfill?: boolean;
   /** Custom name set by the user; falls back to `batchLabel(prompts)` when empty. */
   title?: string;
 };
@@ -85,13 +91,19 @@ function batchLabel(prompts: string[]): string {
 }
 
 /** Flattened questions + answers for search. */
+/** Completed-batch outcomes with usage accounting attributed: per-result
+ * usage when the provider reports it in the result body, otherwise the
+ * batch-level aggregate when exactly one request succeeded (then it IS that
+ * request's usage). Single source of truth for every answers consumer. */
+function batchOutcomes(item: HistoryItem): BatchOutcome[] {
+  if (!item.batch || item.batch.status !== "completed") return [];
+  return attributeBatchUsage(extractBatchAnswers(item.batch), item.batch.usage);
+}
+
 function batchSearchText(item: HistoryItem): string {
-  const answers =
-    item.batch && item.batch.status === "completed"
-      ? extractBatchAnswers(item.batch).map((a) =>
-          a.ok ? (a.answer ?? "") : (a.error ?? ""),
-        )
-      : [];
+  const answers = batchOutcomes(item).map((a) =>
+    a.ok ? (a.answer ?? "") : (a.error ?? ""),
+  );
   return [...item.prompts, ...answers].join("\n");
 }
 
@@ -109,10 +121,7 @@ function answersForPrompt(answers: BatchOutcome[], index: number): BatchOutcome[
 
 /** Rows: batch_id;model;custom_id;prompt;answer (semicolon-separated, quoted). */
 export function buildCsv(item: HistoryItem): string {
-  const answers =
-    item.batch && item.batch.status === "completed"
-      ? extractBatchAnswers(item.batch)
-      : [];
+  const answers = batchOutcomes(item);
   const rows: string[][] = [
     ["batch_id", "model", "custom_id", "prompt", "answer"],
   ];
@@ -227,6 +236,57 @@ export default function BatchesScreen() {
     },
     [startPolling],
   );
+  // One quiet GET per completed batch that predates batch-level usage
+  // accounting: re-fetch it from the (v1) Batch API to pick up tokens/cost.
+  // OpenRouter keeps results for 30 days, so recent batches backfill fine.
+  // The flag is set only on definitive outcomes (usage fetched, provider
+  // says none, or 410 Gone) — transient failures (the home router's rotating
+  // exit IPs sometimes land on OpenRouter's WAF: HTTP 403 "Access denied by
+  // security policy") stay unflagged so the next app start retries.
+  const backfillUsage = useCallback(
+    async (items: HistoryItem[]) => {
+      for (const item of items) {
+        if (
+          item.usageBackfill ||
+          !item.id.startsWith("batch-") || // srv-* items are server-synced, not OpenRouter batches
+          !item.batch ||
+          item.batch.status !== "completed" ||
+          hasUsageTotals(item.batch.usage)
+        ) {
+          continue;
+        }
+        try {
+          const fresh = await getBatch(item.id);
+          console.log(
+            "[batch-backfill]",
+            item.id,
+            fresh.status,
+            JSON.stringify(fresh.usage)?.slice(0, 300),
+          );
+          updateItem(item.id, { usageBackfill: true });
+          if (hasUsageTotals(fresh.usage)) {
+            updateItem(item.id, { batch: fresh });
+          }
+        } catch (error) {
+          const status = (error as { status?: number }).status;
+          console.log(
+            "[batch-backfill] failed",
+            item.id,
+            error instanceof Error ? error.message : String(error),
+            JSON.stringify((error as { body?: unknown }).body)?.slice(0, 400),
+          );
+          if (status === 410) {
+            // Results expired past the 30-day retention: definitive.
+            updateItem(item.id, { usageBackfill: true });
+          }
+          // Anything else (WAF 403, network, 5xx): leave unflagged to retry
+          // on the next app start through a hopefully different exit IP.
+        }
+      }
+    },
+    [updateItem],
+  );
+
   // Restore saved history and resume polling of in-flight batches.
   useEffect(() => {
     let cancelled = false;
@@ -255,12 +315,15 @@ export default function BatchesScreen() {
           startPolling(item.id, item.prompts);
         }
       }
+      // Pick up usage accounting for batches completed before the v1 Batch
+      // API update (their stored objects carry no usage at all).
+      void backfillUsage(items);
       setHydrated(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [startPolling]);
+  }, [startPolling, backfillUsage]);
 
   // Sync runs from the Home tab, so reload storage when the Batch tab regains
   // focus. Without this, a successful phone sync could stay invisible until
@@ -411,9 +474,13 @@ export default function BatchesScreen() {
           `  ${t("chat.metaCompletion")}: ${usage.completion_tokens ?? "—"}`,
       );
     } else if (answer.ok) {
-      // Old batches (pre accounting) and providers that skip usage: say so
-      // instead of leaving the tokens/cost rows silently missing.
-      lines.push(t("batches.noUsage"));
+      // No per-result usage: say where the accounting actually lives instead
+      // of leaving the tokens/cost rows silently missing.
+      lines.push(
+        hasUsageTotals(item.batch?.usage)
+          ? t("batches.batchLevelUsage")
+          : t("batches.noUsage"),
+      );
     }
     const cost = formatCost(usage?.cost);
     if (cost) lines.push(`${t("chat.metaCost")}: ${cost}`);
@@ -430,7 +497,7 @@ export default function BatchesScreen() {
 
   const copyAllAnswers = async (item: HistoryItem) => {
     if (!item.batch) return;
-    const answers = extractBatchAnswers(item.batch);
+    const answers = batchOutcomes(item);
     const text = item.prompts
       .map((prompt, index) => {
         const variants = answersForPrompt(answers, index);
@@ -870,10 +937,13 @@ function BatchCard({
   const { t } = useI18n();
   const status = item.error ? "error" : (item.batch?.status ?? "pending");
   const completed = item.batch?.status === "completed";
-  const answers =
-    item.batch && completed ? extractBatchAnswers(item.batch) : [];
+  const answers = batchOutcomes(item);
   const counts = item.batch?.request_counts;
-  const totals = batchTotalsLabel(item.batch?.usage);
+  // Σ totals line: the batch-level accounting. Hidden for single-answer
+  // batches, where the attributed per-answer stats line already shows the
+  // same exact numbers (the aggregate would just repeat them).
+  const totals =
+    answers.length === 1 ? null : batchTotalsLabel(item.batch?.usage);
 
   return (
     <ThemedView type="backgroundElement" style={styles.card}>
@@ -931,8 +1001,10 @@ function BatchCard({
           {answers.map((answer) => {
             const index = promptIndexOf(answer);
             const prompt = item.prompts[index] ?? "";
-            // Same stats line as chat bubbles: model · tokens · cost
-            // (tokens/cost appear on batches created with usage accounting).
+            // Same stats line as chat bubbles (model · tokens · cost),
+            // rendered below the answer like the chat bubble's stats row.
+            // Tokens/cost appear when the provider reports usage (per-result
+            // or the batch-level aggregate attributed to a single request).
             const stats = answer.ok
               ? metadataStatsLabel({
                   model: answer.model,
@@ -964,19 +1036,6 @@ function BatchCard({
                     </ThemedText>
                   </Pressable>
                 </View>
-                {stats ? (
-                  <Pressable
-                    onPress={() => onAnswerInfo(answer)}
-                    hitSlop={6}
-                    style={styles.answerModel}
-                    accessibilityRole="button"
-                    accessibilityLabel={t("chat.metaTitle")}
-                  >
-                    <ThemedText type="small" themeColor="textSecondary">
-                      🤖 {stats} ⓘ
-                    </ThemedText>
-                  </Pressable>
-                ) : null}
                 {answer.ok ? (
                   <MathAnswer
                     text={autoDelimitRawLatex(answer.answer ?? "")}
@@ -992,6 +1051,19 @@ function BatchCard({
                     </ThemedText>
                   </Pressable>
                 )}
+                {stats ? (
+                  <Pressable
+                    onPress={() => onAnswerInfo(answer)}
+                    hitSlop={6}
+                    style={styles.answerModel}
+                    accessibilityRole="button"
+                    accessibilityLabel={t("chat.metaTitle")}
+                  >
+                    <ThemedText type="small" themeColor="textSecondary">
+                      🤖 {stats} ⓘ
+                    </ThemedText>
+                  </Pressable>
+                ) : null}
               </View>
             );
           })}

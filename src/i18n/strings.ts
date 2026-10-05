@@ -196,6 +196,8 @@ const en = {
   "batches.noAnswer": "no answer",
   "batches.noUsage":
     "No usage accounting — batches created before the app update carry none; new batches report it.",
+  "batches.batchLevelUsage":
+    "Tokens/cost are reported by the provider as batch totals (the Σ line), not per request.",
   "batches.batch": "Batch",
   "batches.request": "Request",
   "batches.copyAll": "Copy all",
