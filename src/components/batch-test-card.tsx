@@ -474,6 +474,9 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
           ]}
         />
       </View>
+      {/* Chip on its own full-width row: flex:1 next to the label+button
+          squeezed it to ~90px and blew the row height up (long word cannot
+          wrap), rendering an enormous empty pill. */}
       <View style={styles.buttonRow}>
         <Pressable
           onPress={() => void handleSelectProviderId(PROVIDER_OPENAI)}
@@ -494,7 +497,13 @@ export function BatchTestCard({ style }: { style?: ViewStyle }) {
             {t("provider.openaiChip")}
           </ThemedText>
         </Pressable>
-        <ThemedText type="small" themeColor="textSecondary">
+      </View>
+      <View style={styles.buttonRow}>
+        <ThemedText
+          type="small"
+          themeColor="textSecondary"
+          style={styles.activeLabel}
+        >
           {llmConfig
             ? `${t("provider.activeLabel")} ${llmConfig.providers[llmConfig.provider]?.name ?? llmConfig.provider}`
             : ""}
@@ -742,6 +751,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     gap: Spacing.two,
     marginTop: Spacing.one,
+  },
+  activeLabel: {
+    flex: 1,
   },
   sectionBreak: {
     height: 1,

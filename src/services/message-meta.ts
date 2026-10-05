@@ -139,6 +139,22 @@ export function metadataStatsLabel(message: MessageMetaSource): string | null {
   return parts.length ? parts.join(" · ") : null;
 }
 
+/** Aggregate "Σ …" line for a whole batch, parsed defensively from the batch
+ * object's `usage` field (typed `unknown` upstream), e.g.
+ * "Σ 36.4k tok · $0.0123". Returns null when nothing usable is present. */
+export function batchTotalsLabel(usage: unknown): string | null {
+  if (!usage || typeof usage !== "object") return null;
+  const u = usage as Record<string, unknown>;
+  const tokens = formatTokens(
+    typeof u.total_tokens === "number" ? u.total_tokens : null,
+  );
+  const price = formatCost(typeof u.cost === "number" ? u.cost : null);
+  const parts = [tokens ? `${tokens} tok` : null, price].filter(
+    (p): p is string => p !== null,
+  );
+  return parts.length ? `Σ ${parts.join(" · ")}` : null;
+}
+
 /**
  * One-line bubble caption, e.g. "12.09.26 14:03 · deepseek-v4 🧊 · 1.2k tok · $0.0123".
  * Omits missing pieces; returns null when there is nothing to show.

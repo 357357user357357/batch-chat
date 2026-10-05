@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
 import {
+  batchTotalsLabel,
   formatCost,
   formatMessageDate,
   formatTokens,
@@ -91,6 +92,19 @@ test('metadataStatsLabel omits the date and keeps model, tokens, cost', () => {
     'glm-5.3-flash · 850 tok · $0',
   );
   assert.equal(metadataStatsLabel({}), null);
+});
+
+test('batchTotalsLabel sums batch usage defensively', () => {
+  assert.equal(
+    batchTotalsLabel({ total_tokens: 36400, cost: 0.0123 }),
+    'Σ 36.4k tok · $0.0123',
+  );
+  assert.equal(batchTotalsLabel({ total_tokens: 850 }), 'Σ 850 tok');
+  assert.equal(batchTotalsLabel({ cost: 0.5 }), 'Σ $0.5');
+  assert.equal(batchTotalsLabel({ total_tokens: 'x', cost: null }), null);
+  assert.equal(batchTotalsLabel({}), null);
+  assert.equal(batchTotalsLabel(undefined), null);
+  assert.equal(batchTotalsLabel('nope'), null);
 });
 
 test('normalizeModelKey canonicalizes ids for the catalog cache', () => {

@@ -711,6 +711,7 @@ export type OpenRouterBatchRequest = {
     temperature?: number;
     max_tokens?: number;
     reasoning?: { enabled: false } | { effort: ReasoningEffort };
+    usage?: { include: boolean };
   };
 };
 
@@ -752,6 +753,11 @@ export type BatchOutcome = {
   error?: string;
   /** Exact model that produced this answer (when the result body carries it). */
   model?: string;
+  /** Token/cost accounting from the result body (requested with
+   * `usage: { include: true }`; absent on batches created before this). */
+  usage?: OpenRouterUsage;
+  /** Provider slug that actually served this answer, when present. */
+  provider?: string;
 };
 
 async function parseError(response: Response): Promise<never> {
@@ -789,6 +795,9 @@ export async function createBatch(
     custom_id: `req-${index + 1}`,
     body: {
       messages: withPromptCache(job.messages, ttlSeconds),
+      // Ask for per-request token/cost accounting (same accounting param as
+      // sync chat) so completed answers carry usage + cost for the UI.
+      usage: { include: true },
       ...(job.options?.temperature !== undefined
         ? { temperature: job.options.temperature }
         : {}),
@@ -916,7 +925,15 @@ export function extractBatchAnswers(batch: OpenRouterBatch): BatchOutcome[] {
       };
     }
     const content = response.body?.choices?.[0]?.message?.content ?? '';
-    return { custom_id: customId, ok: true, answer: content, status: 200, model: response.body?.model ?? undefined };
+    return {
+      custom_id: customId,
+      ok: true,
+      answer: content,
+      status: 200,
+      model: response.body?.model ?? undefined,
+      usage: response.body?.usage ?? undefined,
+      provider: response.body?.provider ?? undefined,
+    };
   });
 }
 

@@ -33,6 +33,10 @@ import {
     subscribeModelNames,
 } from "@/services/model-names";
 import {
+  batchTotalsLabel,
+  metadataStatsLabel,
+} from "@/services/message-meta";
+import {
   createBatch,
   extractBatchAnswers,
   isBatchTerminal,
@@ -818,6 +822,7 @@ function BatchCard({
   const answers =
     item.batch && completed ? extractBatchAnswers(item.batch) : [];
   const counts = item.batch?.request_counts;
+  const totals = batchTotalsLabel(item.batch?.usage);
 
   return (
     <ThemedView type="backgroundElement" style={styles.card}>
@@ -858,6 +863,12 @@ function BatchCard({
         </ThemedText>
       ) : null}
 
+      {totals ? (
+        <ThemedText type="code" themeColor="textSecondary">
+          {totals}
+        </ThemedText>
+      ) : null}
+
       {item.error ? (
         <ThemedText type="small" style={styles.errorText}>
           {item.error}
@@ -869,7 +880,15 @@ function BatchCard({
           {answers.map((answer) => {
             const index = promptIndexOf(answer);
             const prompt = item.prompts[index] ?? "";
-            const siblings = answersForPrompt(answers, index);
+            // Same stats line as chat bubbles: model · tokens · cost
+            // (tokens/cost appear on batches created with usage accounting).
+            const stats = answer.ok
+              ? metadataStatsLabel({
+                  model: answer.model,
+                  total_tokens: answer.usage?.total_tokens,
+                  cost: answer.usage?.cost,
+                })
+              : null;
             return (
               <View key={answer.custom_id} style={styles.answerBlock}>
                 <View style={styles.answerPromptRow}>
@@ -894,13 +913,13 @@ function BatchCard({
                     </ThemedText>
                   </Pressable>
                 </View>
-                {siblings.length > 1 && answer.model ? (
+                {stats ? (
                   <ThemedText
                     type="small"
                     themeColor="textSecondary"
                     style={styles.answerModel}
                   >
-                    🤖 {modelDisplayName(answer.model)}
+                    🤖 {stats}
                   </ThemedText>
                 ) : null}
                 {answer.ok ? (
