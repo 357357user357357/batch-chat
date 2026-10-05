@@ -12,6 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/hooks/use-theme';
+import { shortModelName } from '@/services/message-meta';
 import { listModels, withFlexSuffix, type OpenRouterModelInfo } from '@/services/openrouter';
 
 export type ModelChipsProps = {
@@ -291,7 +292,9 @@ export function ModelChips({ mode, value, onChange, visibleCount = 8 }: ModelChi
           {value ? (
             <ThemedText type="code" themeColor="textSecondary" numberOfLines={1}>
               {t('models.selected', {
-                model: selectedModel ? `${selectedModel.name} (${selectedModel.id})` : value,
+                model: selectedModel
+                  ? `${selectedModel.name} (${selectedModel.id})`
+                  : (shortModelName(value) ?? value),
               })}
             </ThemedText>
           ) : null}

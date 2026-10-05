@@ -640,7 +640,9 @@ export default function BatchesScreen() {
                 themeColor="textSecondary"
                 numberOfLines={1}
               >
-                {t("models.selected", { model })}
+                {t("models.selected", {
+                  model: shortModelName(model) ?? model,
+                })}
               </ThemedText>
             </Pressable>
 

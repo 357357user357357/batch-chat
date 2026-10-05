@@ -1328,7 +1328,9 @@ export default function ChatScreen() {
                 <View style={styles.thinkingRow}>
                   <ActivityIndicator size="small" />
                   <ThemedText type="small" themeColor="textSecondary">
-                    {t("chat.thinking", { model })}
+                    {t("chat.thinking", {
+                      model: shortModelName(model) ?? model,
+                    })}
                   </ThemedText>
                 </View>
               ) : null}
@@ -1350,7 +1352,9 @@ export default function ChatScreen() {
                     themeColor="textSecondary"
                     numberOfLines={1}
                   >
-                    {t("models.selected", { model })}
+                    {t("models.selected", {
+                      model: shortModelName(model) ?? model,
+                    })}
                   </ThemedText>
                 </Pressable>
                 <View style={styles.chipsRow}>
@@ -1594,7 +1598,7 @@ export default function ChatScreen() {
                         themeColor="textSecondary"
                         numberOfLines={1}
                       >
-                        {dialog.model}
+                        {shortModelName(dialog.model) ?? dialog.model}
                       </ThemedText>
                       {preview ? (
                         <ThemedText

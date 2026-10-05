@@ -14,6 +14,7 @@ import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
+import { shortModelName } from "@/services/message-meta";
 
 /**
  * A single chat dialog listed in the drawer.
@@ -273,7 +274,7 @@ export function ChatDrawer({
                         themeColor="textSecondary"
                         numberOfLines={1}
                       >
-                        {dialog.model}
+                        {shortModelName(dialog.model) ?? dialog.model}
                       </ThemedText>
                       {preview ? (
                         <ThemedText
