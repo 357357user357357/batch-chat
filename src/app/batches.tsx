@@ -1,6 +1,6 @@
 import * as Clipboard from "expo-clipboard";
 import { useFocusEffect } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -26,7 +26,12 @@ import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
 import { saveTextFile, type SaveOutcome } from "@/services/files";
-import { shortModelName } from "@/services/message-meta";
+import {
+    ensureModelNamesPrimed,
+    getModelNamesVersion,
+    modelDisplayName,
+    subscribeModelNames,
+} from "@/services/model-names";
 import {
   createBatch,
   extractBatchAnswers,
@@ -151,6 +156,12 @@ export default function BatchesScreen() {
   const [history, setHistory] = useState<HistoryItem[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+
+  // Catalog display names arrive async; re-render when the cache updates.
+  useSyncExternalStore(subscribeModelNames, getModelNamesVersion);
+  useEffect(() => {
+    void ensureModelNamesPrimed();
+  }, []);
   const [modelPickerOpen, setModelPickerOpen] = useState(false);
   const [titleDraft, setTitleDraft] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -641,7 +652,7 @@ export default function BatchesScreen() {
                 numberOfLines={1}
               >
                 {t("models.selected", {
-                  model: shortModelName(model) ?? model,
+                  model: modelDisplayName(model),
                 })}
               </ThemedText>
             </Pressable>
@@ -756,7 +767,7 @@ export default function BatchesScreen() {
                       themeColor="textSecondary"
                       numberOfLines={1}
                     >
-                      {shortModelName(item.model) ?? item.model}
+                      {modelDisplayName(item.model)}
                     </ThemedText>
                     <ThemedText type="code" themeColor="textSecondary">
                       {formatTime(item.createdAt)} ·{" "}
@@ -813,7 +824,7 @@ function BatchCard({
       <View style={styles.cardHeader}>
         <View style={styles.cardHeaderText}>
           <ThemedText type="smallBold" numberOfLines={1}>
-            {shortModelName(item.model) ?? item.model}
+            {modelDisplayName(item.model)}
           </ThemedText>
           <ThemedText type="code" themeColor="textSecondary">
             {formatTime(item.createdAt)} · {item.id.slice(0, 18)}…
@@ -889,7 +900,7 @@ function BatchCard({
                     themeColor="textSecondary"
                     style={styles.answerModel}
                   >
-                    🤖 {shortModelName(answer.model) ?? answer.model}
+                    🤖 {modelDisplayName(answer.model)}
                   </ThemedText>
                 ) : null}
                 {answer.ok ? (

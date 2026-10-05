@@ -12,7 +12,7 @@ import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useI18n } from '@/i18n';
 import { useTheme } from '@/hooks/use-theme';
-import { shortModelName } from '@/services/message-meta';
+import { modelDisplayName, ingestModelNames } from '@/services/model-names';
 import { listModels, withFlexSuffix, type OpenRouterModelInfo } from '@/services/openrouter';
 
 export type ModelChipsProps = {
@@ -82,7 +82,9 @@ export function ModelChips({ mode, value, onChange, visibleCount = 8 }: ModelChi
     setLoading(true);
     setError(false);
     try {
-      setModels(await listModels());
+      const models = await listModels();
+      setModels(models);
+      ingestModelNames(models);
     } catch (err) {
       console.warn('[model-chips] load failed', err);
       setError(true);
@@ -294,7 +296,7 @@ export function ModelChips({ mode, value, onChange, visibleCount = 8 }: ModelChi
               {t('models.selected', {
                 model: selectedModel
                   ? `${selectedModel.name} (${selectedModel.id})`
-                  : (shortModelName(value) ?? value),
+                  : modelDisplayName(value),
               })}
             </ThemedText>
           ) : null}

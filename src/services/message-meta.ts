@@ -17,6 +17,19 @@ export type MessageMetaSource = {
 /** Server-side gateway prefixes that ride inside the stored model id. */
 const GATEWAY_PREFIXES = ["custom:", "vertex:", "bedrock:"];
 
+/** Optional hook: resolves a raw model id to its catalog display name
+ * ("z-ai/glm-5.3-flash" → "GLM-5.3 Flash"). Set by services/model-names
+ * once the provider catalog is fetched; pure callers (metadataLabel etc.)
+ * then render friendly names without importing RN-dependent code. */
+type ModelDisplayNameResolver = (id: string) => string | null;
+let displayNameResolver: ModelDisplayNameResolver | null = null;
+
+export function setModelDisplayNameResolver(
+  resolver: ModelDisplayNameResolver | null,
+): void {
+  displayNameResolver = resolver;
+}
+
 const FLEX_MARK = "🧊";
 const BATCH_MARK = "⚡";
 
@@ -74,10 +87,32 @@ export function shortModelName(model: string | null | undefined): string | null 
     ? withoutFlex.slice(0, -":batch".length)
     : withoutFlex;
   const base = withoutBatch.split("/").pop() ?? withoutBatch;
+  const resolved = displayNameResolver?.(trimmed) ?? null;
+  const shown = resolved ?? base;
   const flex = withoutFlex.length !== trimmed.length;
   const batch = withoutBatch.length !== withoutFlex.length;
   const marks = `${flex ? ` ${FLEX_MARK}` : ""}${batch ? ` ${BATCH_MARK}` : ""}`;
-  return marks ? `${base}${marks}` : base;
+  return marks ? `${shown}${marks}` : shown;
+}
+
+/** Canonical cache key for a model id: strips gateway prefixes, serving-tier
+ * suffixes (:flex/:batch) and case, so "custom:Z-AI/GLM-5.3-Flash:batch"
+ * and "z-ai/glm-5.3-flash" share one catalog entry. */
+export function normalizeModelKey(model: string | null | undefined): string {
+  if (!model) return "";
+  let trimmed = model.trim().toLowerCase();
+  for (const prefix of GATEWAY_PREFIXES) {
+    if (trimmed.startsWith(prefix)) {
+      trimmed = trimmed.slice(prefix.length);
+      break;
+    }
+  }
+  for (const suffix of [":flex", ":batch"]) {
+    if (trimmed.endsWith(suffix)) {
+      trimmed = trimmed.slice(0, -suffix.length);
+    }
+  }
+  return trimmed;
 }
 
 /** "12.09.26 14:03" — same format the server web UI shows. */

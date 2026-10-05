@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
     Animated,
     Modal,
@@ -14,7 +14,11 @@ import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
-import { shortModelName } from "@/services/message-meta";
+import {
+    getModelNamesVersion,
+    modelDisplayName,
+    subscribeModelNames,
+} from "@/services/model-names";
 
 export type BatchDialogSummary = {
   id: string;
@@ -75,6 +79,9 @@ export function BatchDrawer({
   const { t } = useI18n();
   const theme = useTheme();
   const { width: windowWidth } = useWindowDimensions();
+
+  // Re-render when the catalog display-name cache updates.
+  useSyncExternalStore(subscribeModelNames, getModelNamesVersion);
 
   const width = Math.floor(windowWidth * (2 / 3));
 
@@ -267,7 +274,7 @@ export function BatchDrawer({
                         themeColor="textSecondary"
                         numberOfLines={1}
                       >
-                        {shortModelName(dialog.model) ?? dialog.model}
+                        {modelDisplayName(dialog.model)}
                       </ThemedText>
                       <ThemedText type="code" themeColor="textSecondary">
                         {formatTime(dialog.createdAt)} ·{" "}

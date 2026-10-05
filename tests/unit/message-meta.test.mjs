@@ -7,6 +7,7 @@ import {
   formatTokens,
   hasReplyMetadata,
   metadataLabel,
+  normalizeModelKey,
   shortModelName,
 } from '../../.test-build/message-meta.mjs';
 
@@ -73,4 +74,14 @@ test('metadataLabel builds the full bubble caption', () => {
     '12.09.26 14.03 · deepseek-v4 🧊 · 1.2k tok · $0.0123',
   );
   assert.equal(metadataLabel({}), null);
+});
+
+test('normalizeModelKey canonicalizes ids for the catalog cache', () => {
+  assert.equal(normalizeModelKey('openai/gpt-5.6-sol-pro'), 'openai/gpt-5.6-sol-pro');
+  assert.equal(normalizeModelKey('custom:Z-AI/GLM-5.3-Flash:batch'), 'z-ai/glm-5.3-flash');
+  assert.equal(normalizeModelKey('vertex:deepseek/deepseek-v4:flex'), 'deepseek/deepseek-v4');
+  assert.equal(normalizeModelKey('bedrock:anthropic/claude-x:batch'), 'anthropic/claude-x');
+  assert.equal(normalizeModelKey('  openai/gpt-x:flex  '), 'openai/gpt-x');
+  assert.equal(normalizeModelKey(null), '');
+  assert.equal(normalizeModelKey(''), '');
 });

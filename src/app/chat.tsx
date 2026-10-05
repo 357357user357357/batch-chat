@@ -1,6 +1,6 @@
 import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -32,7 +32,6 @@ import {
     formatMessageDate,
     hasReplyMetadata,
     metadataLabel,
-    shortModelName,
 } from "@/services/message-meta";
 import type { ChatMessage, Dialog } from "@/services/sync-mapping";
 import {
@@ -44,6 +43,12 @@ import {
     withFlexSuffix,
 } from "@/services/openrouter";
 import { loadJSON, loadString, saveJSON, saveString } from "@/services/storage";
+import {
+    ensureModelNamesPrimed,
+    getModelNamesVersion,
+    modelDisplayName,
+    subscribeModelNames,
+} from "@/services/model-names";
 import {
     resolveTavilyApiKey,
     searchWeb,
@@ -176,6 +181,12 @@ export default function ChatScreen() {
   // Flex processing tier (like the web UI's 🧊 Flex): cheaper/slower; the
   // service falls back to the standard tier automatically when unsupported.
   const [flexOn, setFlexOn] = useState(false);
+
+  // Catalog display names arrive async; re-render when the cache updates.
+  useSyncExternalStore(subscribeModelNames, getModelNamesVersion);
+  useEffect(() => {
+    void ensureModelNamesPrimed();
+  }, []);
   // Your preferred default model for new dialogs (persisted; falls back to
   // OPENROUTER_MODEL until you pick one for the first time).
   const [defaultModel, setDefaultModel] = useState(OPENROUTER_MODEL);
@@ -308,7 +319,7 @@ export default function ChatScreen() {
     if (message.model) {
       // Friendly name first, exact id kept for provenance when it differs
       // ("GLM-5.3 Flash (custom:z-ai/glm-5.3-flash)").
-      const short = shortModelName(message.model);
+      const short = modelDisplayName(message.model);
       lines.push(
         short && short !== message.model
           ? `${t("chat.metaModel")}: ${short} (${message.model})`
@@ -1329,7 +1340,7 @@ export default function ChatScreen() {
                   <ActivityIndicator size="small" />
                   <ThemedText type="small" themeColor="textSecondary">
                     {t("chat.thinking", {
-                      model: shortModelName(model) ?? model,
+                      model: modelDisplayName(model),
                     })}
                   </ThemedText>
                 </View>
@@ -1353,7 +1364,7 @@ export default function ChatScreen() {
                     numberOfLines={1}
                   >
                     {t("models.selected", {
-                      model: shortModelName(model) ?? model,
+                      model: modelDisplayName(model),
                     })}
                   </ThemedText>
                 </Pressable>
@@ -1598,7 +1609,7 @@ export default function ChatScreen() {
                         themeColor="textSecondary"
                         numberOfLines={1}
                       >
-                        {shortModelName(dialog.model) ?? dialog.model}
+                        {modelDisplayName(dialog.model)}
                       </ThemedText>
                       {preview ? (
                         <ThemedText

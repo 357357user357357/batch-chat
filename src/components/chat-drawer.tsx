@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
     Animated,
     Modal,
@@ -14,7 +14,11 @@ import { ThemedText } from "@/components/themed-text";
 import { Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
-import { shortModelName } from "@/services/message-meta";
+import {
+    getModelNamesVersion,
+    modelDisplayName,
+    subscribeModelNames,
+} from "@/services/model-names";
 
 /**
  * A single chat dialog listed in the drawer.
@@ -75,6 +79,9 @@ export function ChatDrawer({
   const { t } = useI18n();
   const theme = useTheme();
   const { width: windowWidth } = useWindowDimensions();
+
+  // Re-render when the catalog display-name cache updates.
+  useSyncExternalStore(subscribeModelNames, getModelNamesVersion);
 
   // The drawer is never wider than the screen it is shown on.
   const width = Math.min(PANEL_WIDTH, Math.floor(windowWidth * 0.85));
@@ -274,7 +281,7 @@ export function ChatDrawer({
                         themeColor="textSecondary"
                         numberOfLines={1}
                       >
-                        {shortModelName(dialog.model) ?? dialog.model}
+                        {modelDisplayName(dialog.model)}
                       </ThemedText>
                       {preview ? (
                         <ThemedText
