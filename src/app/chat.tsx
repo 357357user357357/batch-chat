@@ -31,7 +31,7 @@ import {
     formatCost,
     formatMessageDate,
     hasReplyMetadata,
-    metadataLabel,
+    metadataStatsLabel,
 } from "@/services/message-meta";
 import type { ChatMessage, Dialog } from "@/services/sync-mapping";
 import {
@@ -128,10 +128,11 @@ function hasMetadata(message: ChatMessage): boolean {
   );
 }
 
-/** One-line caption under an assistant bubble, e.g.
- * "12.09.26 14:03 · deepseek-v4 🧊 · 1.2k tok · $0.0123". */
+/** Stats line on its own row under an assistant bubble, e.g.
+ * "OpenAI: GPT-5.6 Sol Pro ⚡ · 30.7k tok · $0.0915" — no date (the actions
+ * row above has it), wraps instead of clipping on long catalog names. */
 function metaCaption(message: ChatMessage): string {
-  return metadataLabel(metaSource(message)) ?? "";
+  return metadataStatsLabel(metaSource(message)) ?? "";
 }
 
 let counter = 0;
@@ -1299,18 +1300,18 @@ export default function ChatScreen() {
                               </ThemedText>
                             </Pressable>
                           ) : null}
-                          {hasMetadata(message) ? (
-                            <Pressable
-                              onPress={() => showMessageMetadata(message)}
-                              hitSlop={8}
-                              style={styles.metaChip}
-                            >
-                              <ThemedText type="code" style={styles.metaChipText}>
-                                ⓘ {metaCaption(message)}
-                              </ThemedText>
-                            </Pressable>
-                          ) : null}
                         </View>
+                        {hasMetadata(message) ? (
+                          <Pressable
+                            onPress={() => showMessageMetadata(message)}
+                            hitSlop={8}
+                            style={styles.metaChip}
+                          >
+                            <ThemedText type="code" style={styles.metaChipText}>
+                              ⓘ {metaCaption(message)}
+                            </ThemedText>
+                          </Pressable>
+                        ) : null}
                         <Pressable
                           onPress={() =>
                             void handleCopy(message.content, message.id)
@@ -1824,12 +1825,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   metaChip: {
+    alignSelf: "flex-start",
+    maxWidth: "100%",
+    flexShrink: 1,
+    marginTop: 2,
     paddingVertical: 3,
     paddingHorizontal: 6,
     borderRadius: 7,
   },
   metaChipText: {
     fontSize: 12,
+    flexShrink: 1,
   },
   thinkingRow: {
     flexDirection: "row",

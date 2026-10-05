@@ -124,6 +124,21 @@ export function formatMessageDate(createdAt: number | string | null | undefined)
   return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${String(d.getFullYear()).slice(2)} ${p(d.getHours())}.${p(d.getMinutes())}`;
 }
 
+/** Stats line for an assistant bubble, e.g.
+ * "deepseek-v4 🧊 · 1.2k tok · $0.0123" — same pieces as metadataLabel but
+ * without the date, which has its own row above. Returns null when there is
+ * nothing to show. */
+export function metadataStatsLabel(message: MessageMetaSource): string | null {
+  const parts: string[] = [];
+  const model = shortModelName(message.model);
+  if (model) parts.push(model);
+  const tokens = formatTokens(message.total_tokens);
+  if (tokens) parts.push(`${tokens} tok`);
+  const cost = formatCost(message.cost);
+  if (cost) parts.push(cost);
+  return parts.length ? parts.join(" · ") : null;
+}
+
 /**
  * One-line bubble caption, e.g. "12.09.26 14:03 · deepseek-v4 🧊 · 1.2k tok · $0.0123".
  * Omits missing pieces; returns null when there is nothing to show.

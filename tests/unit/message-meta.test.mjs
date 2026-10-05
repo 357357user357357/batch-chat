@@ -7,6 +7,7 @@ import {
   formatTokens,
   hasReplyMetadata,
   metadataLabel,
+  metadataStatsLabel,
   normalizeModelKey,
   shortModelName,
 } from '../../.test-build/message-meta.mjs';
@@ -74,6 +75,22 @@ test('metadataLabel builds the full bubble caption', () => {
     '12.09.26 14.03 · deepseek-v4 🧊 · 1.2k tok · $0.0123',
   );
   assert.equal(metadataLabel({}), null);
+});
+
+test('metadataStatsLabel omits the date and keeps model, tokens, cost', () => {
+  assert.equal(
+    metadataStatsLabel({
+      model: 'openai/gpt-5.6-sol-pro:batch',
+      total_tokens: 30700,
+      cost: 0.0915,
+    }),
+    'gpt-5.6-sol-pro ⚡ · 30.7k tok · $0.0915',
+  );
+  assert.equal(
+    metadataStatsLabel({ model: 'z-ai/glm-5.3-flash', total_tokens: 850, cost: 0 }),
+    'glm-5.3-flash · 850 tok · $0',
+  );
+  assert.equal(metadataStatsLabel({}), null);
 });
 
 test('normalizeModelKey canonicalizes ids for the catalog cache', () => {
