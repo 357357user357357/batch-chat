@@ -26,6 +26,7 @@ import { BottomTabInset, MaxContentWidth, Spacing } from "@/constants/theme";
 import { useTheme } from "@/hooks/use-theme";
 import { useI18n } from "@/i18n";
 import { saveTextFile, type SaveOutcome } from "@/services/files";
+import { notifyBatchSettled } from "@/services/notify";
 import {
     ensureModelNamesPrimed,
     getModelNamesVersion,
@@ -182,6 +183,12 @@ export default function BatchesScreen() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [search, setSearch] = useState("");
   const pollRuns = useRef(new Set<string>());
+  // Mirror for async closures (poller notifications) that need the latest
+  // history without re-arming the callback on every keystroke.
+  const historyRef = useRef<HistoryItem[]>([]);
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
   const selectedItem = history.find((item) => item.id === selectedId) ?? null;
 
   const updateItem = useCallback((id: string, patch: Partial<HistoryItem>) => {
@@ -206,16 +213,30 @@ export default function BatchesScreen() {
             onPoll: (current) => updateItem(id, { batch: current }),
           });
           updateItem(id, { batch: done, error: undefined });
+          const counts = done.request_counts;
+          const item = historyRef.current.find((h) => h.id === id);
+          await notifyBatchSettled(
+            item?.title || batchLabel(prompts),
+            done.status === "completed",
+            t("batches.notifDetail")
+              .replace("{completed}", String(counts?.completed ?? 0))
+              .replace("{total}", String(counts?.total ?? 0)),
+          );
         } catch (error) {
-          updateItem(id, {
-            error: error instanceof Error ? error.message : String(error),
-          });
+          const message = error instanceof Error ? error.message : String(error);
+          updateItem(id, { error: message });
+          const item = historyRef.current.find((h) => h.id === id);
+          await notifyBatchSettled(
+            item?.title || batchLabel(prompts),
+            false,
+            message,
+          );
         } finally {
           pollRuns.current.delete(id);
         }
       })();
     },
-    [updateItem],
+    [updateItem, t],
   );
 
   const trackBatch = useCallback(

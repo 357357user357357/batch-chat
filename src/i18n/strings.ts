@@ -192,6 +192,7 @@ const en = {
   "batches.back": "Back",
   "batches.questionsCount": "{count} questions",
   "batches.doneCount": "{completed}/{total} done",
+  "batches.notifDetail": "{completed} of {total} requests answered. Open Batches to read the answers.",
   "batches.errorsCount": " · {failed} errors",
   "batches.noAnswer": "no answer",
   "batches.noUsage":
