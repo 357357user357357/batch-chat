@@ -5,6 +5,12 @@
 
 import { getStoredTavilyApiKey } from "@/services/key-store";
 
+// Tavily blocks RU IPs (HTTP 403), so searches ride through our own server
+// (non-RU egress), mirroring the OpenRouter provider's proxy setup. The
+// user's key still travels in the request body — the server only forwards,
+// it never substitutes its own key.
+export const TAVILY_PROXY_BASE_URL = "https://flexchat.top/tv";
+
 export type TavilySearchResult = {
   title: string;
   url: string;
@@ -52,7 +58,7 @@ export async function searchWeb(
   const timeout = setTimeout(() => controller.abort(), 10_000);
   let response: Response;
   try {
-    response = await fetch("https://api.tavily.com/search", {
+    response = await fetch(`${TAVILY_PROXY_BASE_URL}/search`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
