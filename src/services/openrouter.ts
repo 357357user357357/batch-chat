@@ -23,6 +23,7 @@ import {
   PROVIDER_OPENROUTER,
 } from "@/services/llm-providers";
 import { getCacheDurationSeconds } from "@/services/cache-settings";
+import { OPENROUTER_PROXY_BASE_URL } from "@/services/llm-providers";
 import { splitModelVariant } from "@/services/model-variants";
 import { maxTokenLimitFromError } from "@/services/token-limits";
 import { SseChatAccumulator, Utf8ChunkDecoder } from "@/services/sse-stream";
@@ -146,10 +147,10 @@ export type BatchResult = {
 // Documented Batch API root (the old /api/beta/batches preview predates
 // batch-level usage accounting — completed batches reported no `usage` at
 // all through it, so tokens/cost never reached the UI).
-const OPENROUTER_BATCH_URL = 'https://openrouter.ai/api/v1/batches';
+const OPENROUTER_BATCH_URL = `${OPENROUTER_PROXY_BASE_URL}/batches`;
 
 /** Full catalog of models available on OpenRouter (used for pickers). */
-const OPENROUTER_MODELS_URL = 'https://openrouter.ai/api/v1/models';
+const OPENROUTER_MODELS_URL = `${OPENROUTER_PROXY_BASE_URL}/models`;
 
 /**
  * Any alternative provider is an OpenAI-compatible endpoint: chat POST goes
@@ -171,6 +172,8 @@ async function providerModelsUrl(): Promise<string> {
   const base = provider.base_url.replace(/\/+$/, '');
   return `${base.endsWith('/v1') ? base : `${base}/v1`}/models`;
 }
+/** Provider-aware model-catalog URL, exported for the reconnect probe. */
+export { providerModelsUrl };
 
 /** Cheaper batch model: 50% off the standard price. */
 export const OPENROUTER_BATCH_MODEL =

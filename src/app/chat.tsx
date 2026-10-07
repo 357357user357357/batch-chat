@@ -44,6 +44,7 @@ import {
     chat,
     formatQuestionLatex,
     OPENROUTER_MODEL,
+    providerModelsUrl,
     type OpenRouterMessage,
     type ReasoningEffort,
     withFlexSuffix,
@@ -79,7 +80,10 @@ async function probeOnline(): Promise<boolean> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 4000);
   try {
-    const response = await fetch("https://openrouter.ai/api/v1/models", {
+    // Provider-aware: probes the same base the chat traffic uses (the server
+    // passthrough for OpenRouter), so "online" here means "this provider is
+    // reachable", not just "some network exists".
+    const response = await fetch(await providerModelsUrl(), {
       method: "HEAD",
       signal: controller.signal,
     });
@@ -165,6 +169,12 @@ let counter = 0;
 function makeId(): string {
   counter += 1;
   return `${Date.now().toString(36)}-${counter}`;
+}
+
+/** Module-scope clock so component closures stay pure for the
+ *  react-compiler lint rule (same trick as makeId). */
+function nowMs(): number {
+  return Date.now();
 }
 
 /** Derive a short title from the first user message ('' when none yet). */
@@ -998,7 +1008,7 @@ export default function ChatScreen() {
       id: makeId(),
       role: "user",
       content: text,
-      createdAt: Date.now(),
+      createdAt: nowMs(),
     };
     const currentMessages = activeDialog?.messages ?? [];
     const nextMessages = [...currentMessages, userMessage].slice(-MAX_MESSAGES);
@@ -1205,7 +1215,7 @@ export default function ChatScreen() {
           id: makeId(),
           role: "assistant",
           content: reply,
-          createdAt: Date.now(),
+          createdAt: nowMs(),
           ...replyMeta,
         };
         setDialogs((current) =>

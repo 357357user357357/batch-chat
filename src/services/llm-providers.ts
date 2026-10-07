@@ -43,13 +43,21 @@ export type LlmProviderConfig = {
 
 export const FALLBACK_PROVIDER_ID = PROVIDER_OPENROUTER;
 
+/** OpenRouter blocks (HTTP 403) Russian client IPs. The OpenRouter provider
+ *  therefore rides through our own server's passthrough proxy (non-RU egress,
+ *  `/or/v1` → `https://openrouter.ai/api/v1`), which forwards the caller's
+ *  own API key untouched. Legacy stored configs pointing straight at
+ *  openrouter.ai are migrated below. */
+export const OPENROUTER_PROXY_BASE_URL = "https://flexchat.top/or/v1";
+export const OPENROUTER_DIRECT_BASE_URL = "https://openrouter.ai/api/v1";
+
 export const FALLBACK_LLM_CONFIG: LlmProviderConfig = {
   provider: PROVIDER_OPENROUTER,
   providers: {
     [PROVIDER_OPENROUTER]: {
       id: PROVIDER_OPENROUTER,
-      name: "OpenRouter",
-      base_url: "https://openrouter.ai/api/v1",
+      name: "OpenRouter (via server)",
+      base_url: OPENROUTER_PROXY_BASE_URL,
       model: "deepseek/deepseek-chat-v3.1:free",
     },
     [PROVIDER_OPENAI]: {
@@ -89,10 +97,16 @@ export async function getLlmConfig(): Promise<LlmProviderConfig> {
   };
   for (const [id, settings] of Object.entries(stored?.providers ?? {})) {
     if (settings && typeof settings.id === "string" && settings.id) {
+      // Migration: devices that stored the pre-proxy OpenRouter base URL get
+      // silently moved onto the server passthrough (RU egress is 403'd).
+      const migratedBase =
+        id === PROVIDER_OPENROUTER && settings.base_url === OPENROUTER_DIRECT_BASE_URL
+          ? OPENROUTER_PROXY_BASE_URL
+          : settings.base_url;
       merged.providers[id] = {
         id: settings.id,
         name: settings.name || id,
-        base_url: settings.base_url || FALLBACK_LLM_CONFIG.providers[id]?.base_url || "",
+        base_url: migratedBase || FALLBACK_LLM_CONFIG.providers[id]?.base_url || "",
         model: settings.model || FALLBACK_LLM_CONFIG.providers[id]?.model || "",
       };
     }
