@@ -53,9 +53,11 @@ export async function searchWeb(
   }
 
   // The search must never wedge a send: offline, a bare fetch can hang for
-  // minutes. Abort after 10s — the caller treats it as "no web context".
+  // minutes. Tavily with include_answer=true (plus the proxy hop) regularly
+  // takes 10-20s, so the budget is 30s — the caller still treats a timeout
+  // as "no web context".
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10_000);
+  const timeout = setTimeout(() => controller.abort(), 30_000);
   let response: Response;
   try {
     response = await fetch(`${TAVILY_PROXY_BASE_URL}/search`, {
