@@ -46,19 +46,29 @@ export async function searchWeb(
     );
   }
 
-  const response = await fetch("https://api.tavily.com/search", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      api_key: key,
-      query,
-      max_results: options.maxResults ?? 3,
-      search_depth: options.searchDepth ?? "basic",
-      include_answer: options.includeAnswer ?? true,
-    }),
-  });
+  // The search must never wedge a send: offline, a bare fetch can hang for
+  // minutes. Abort after 10s — the caller treats it as "no web context".
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10_000);
+  let response: Response;
+  try {
+    response = await fetch("https://api.tavily.com/search", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        api_key: key,
+        query,
+        max_results: options.maxResults ?? 3,
+        search_depth: options.searchDepth ?? "basic",
+        include_answer: options.includeAnswer ?? true,
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!response.ok) {
     let detail: unknown;

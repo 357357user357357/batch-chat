@@ -261,6 +261,8 @@ const en = {
   "chat.renamePlaceholder": "Name this dialog…",
   "chat.offlineTavily":
     "No internet — opening tavily.com so you can search directly.",
+  "chat.queued":
+    "⏳ Offline — your message is queued and will send automatically once you're back online.",
   "chat.metaTitle": "Message details",
   "chat.metaModel": "Model",
   "chat.metaReasoning": "Reasoning",

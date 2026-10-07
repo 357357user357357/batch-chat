@@ -1,6 +1,6 @@
 import * as Clipboard from "expo-clipboard";
 import * as WebBrowser from "expo-web-browser";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -35,6 +35,12 @@ import {
 } from "@/services/message-meta";
 import type { ChatMessage, Dialog } from "@/services/sync-mapping";
 import {
+  loadOutbox,
+  queueOutbox,
+  removeFromOutbox,
+  type OutboxItem,
+} from "@/services/outbox";
+import {
     chat,
     formatQuestionLatex,
     OPENROUTER_MODEL,
@@ -63,6 +69,26 @@ function isNetworkError(error: unknown): boolean {
   if (error instanceof TypeError) return true;
   const message = error instanceof Error ? error.message : String(error);
   return /network request failed|failed to fetch|no internet/i.test(message);
+}
+
+/** Cheap connectivity probe: any HTTP answer (even 4xx/5xx) means the network
+ * is up; a timeout or socket error means offline. 4s budget — a real offline
+ * radio doesn't fail requests, it lets them hang, so the send flow probes
+ * first and queues immediately instead of stalling for the full timeout. */
+async function probeOnline(): Promise<boolean> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 4000);
+  try {
+    const response = await fetch("https://openrouter.ai/api/v1/models", {
+      method: "HEAD",
+      signal: controller.signal,
+    });
+    return response.status < 600;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 const DIALOGS_STORAGE_KEY = "openrouter.dialogs.v1";
@@ -271,6 +297,101 @@ export default function ChatScreen() {
     if (!hydrated) return;
     void saveJSON(DIALOGS_STORAGE_KEY, dialogs);
   }, [dialogs, hydrated]);
+
+  // ── Offline outbox ────────────────────────────────────────────────────
+  // Messages sent while offline sit in the outbox service with a pending
+  // bubble; this pass replays them (FIFO) and patches the bubbles with the
+  // answers. A network error keeps the item for the next tick; any other
+  // failure is surfaced on the bubble and dropped.
+  const [outboxCount, setOutboxCount] = useState(0);
+  const flushingRef = useRef(false);
+  const patchDialogMessage = useCallback(
+    (dialogId: string, messageId: string, patch: Partial<ChatMessage>) => {
+      setDialogs((current) =>
+        current.map((dialog) =>
+          dialog.id === dialogId
+            ? {
+                ...dialog,
+                messages: dialog.messages.map((message) =>
+                  message.id === messageId ? { ...message, ...patch } : message,
+                ),
+                updatedAt: Date.now(),
+              }
+            : dialog,
+        ),
+      );
+    },
+    [],
+  );
+  const flushOutbox = useCallback(async () => {
+    if (flushingRef.current) return;
+    flushingRef.current = true;
+    try {
+      // Skip the whole pass when clearly offline: replaying into a dead radio
+      // would hang for the full provider timeout and then misclassify as a
+      // permanent failure. The 20s ticker calls again once the network is back.
+      if (!(await probeOnline())) return;
+      let items = await loadOutbox();
+      while (items.length) {
+        const item = items[0];
+        try {
+          const completion = await chat(item.requestMessages, {
+            model: item.model,
+            ...(item.reasoning ? { reasoning: item.reasoning } : {}),
+            timeoutMs: 120_000,
+          });
+          const reply = completion.choices?.[0]?.message?.content;
+          if (!reply || !reply.trim()) throw new Error(t("chat.emptyResponse"));
+          patchDialogMessage(item.dialogId, item.pendingMessageId, {
+            content: reply,
+            streaming: false,
+            model: completion.model || item.model,
+            reasoning: item.reasoning,
+            provider: completion.provider ?? null,
+            genId: completion.id ?? null,
+            tokensPrompt: completion.usage?.prompt_tokens ?? null,
+            tokensCompletion: completion.usage?.completion_tokens ?? null,
+            totalTokens: completion.usage?.total_tokens ?? null,
+            cost:
+              typeof completion.usage?.cost === "number"
+                ? completion.usage.cost
+                : null,
+          });
+          items = await removeFromOutbox(item.id);
+          setOutboxCount(items.length);
+        } catch (error) {
+          if (isNetworkError(error)) break; // still offline — retry on the next tick
+          const message =
+            error instanceof Error ? error.message : String(error);
+          patchDialogMessage(item.dialogId, item.pendingMessageId, {
+            content: message,
+            error: true,
+            streaming: false,
+          });
+          items = await removeFromOutbox(item.id);
+          setOutboxCount(items.length);
+        }
+      }
+    } finally {
+      flushingRef.current = false;
+    }
+  }, [patchDialogMessage, t]);
+  // App start: count what's waiting and drain immediately (the 20s ticker
+  // below takes over while items remain).
+  useEffect(() => {
+    void (async () => {
+      const pending = await loadOutbox();
+      setOutboxCount(pending.length);
+      if (pending.length) void flushOutbox();
+    })();
+  }, [flushOutbox]);
+  // While items wait, retry on a ticker — the moment connectivity returns
+  // (Wi-Fi back, tunnel up) the queue drains without the user doing anything.
+  useEffect(() => {
+    if (outboxCount === 0) return;
+    const ticker = setInterval(() => void flushOutbox(), 20_000);
+    return () => clearInterval(ticker);
+  }, [outboxCount, flushOutbox]);
 
   // Silent sync-on-start (paired devices only): server tombstones are applied
   // immediately — dialogs deleted on any device disappear from this one too,
@@ -963,7 +1084,64 @@ export default function ChatScreen() {
         content: message.content,
       }));
 
+    // Shared queueing path: appends the pending bubble and stores the exact
+    // request in the outbox. Used by the offline gate below and by the catch
+    // block when the network dies before the first token.
+    const queuePendingMessage = async (
+      messages: OpenRouterMessage[],
+    ): Promise<void> => {
+      if (!activeId) return;
+      const pendingId = makeId();
+      setDialogs((current) =>
+        current.map((dialog) =>
+          dialog.id === activeId
+            ? {
+                ...dialog,
+                messages: [
+                  ...dialog.messages,
+                  {
+                    id: pendingId,
+                    role: "assistant" as const,
+                    content: t("chat.queued"),
+                    createdAt: userMessage.createdAt,
+                    streaming: false,
+                  },
+                ].slice(-MAX_MESSAGES),
+                updatedAt: Date.now(),
+              }
+            : dialog,
+        ),
+      );
+      const queued: OutboxItem = {
+        id: makeId(),
+        dialogId: activeId,
+        pendingMessageId: pendingId,
+        requestMessages: messages,
+        model: flexOn ? withFlexSuffix(model) : model,
+        reasoning: reasoning || null,
+        createdAt: userMessage.createdAt,
+      };
+      setOutboxCount(await queueOutbox(queued));
+    };
+
+    // Captured at send time so the catch block can hand the exact request to
+    // the offline outbox when the network dies before the first token.
+    let requestMessages: OpenRouterMessage[] | null = null;
     try {
+      // Offline gate: with the radio off a request doesn't fail — it hangs
+      // (Tavily's fetch and the 120s provider idle timeout included). Probe
+      // first; clearly offline → queue the exact request and return at once.
+      if (!(await probeOnline())) {
+        requestMessages = [
+          {
+            role: "system",
+            content: `${currentDateTimePrompt()}\n\n${SYSTEM_PROMPT}`,
+          },
+          ...history,
+        ];
+        await queuePendingMessage(requestMessages);
+        return;
+      }
       const webResults = (await resolveTavilyApiKey())
         ? await searchWeb(text, {
             maxResults: 3,
@@ -978,7 +1156,7 @@ export default function ChatScreen() {
           })
         : [];
 
-      const requestMessages: OpenRouterMessage[] = [
+      requestMessages = [
         {
           role: "system",
           content: `${currentDateTimePrompt()}\n\n${SYSTEM_PROMPT}${
@@ -1046,6 +1224,13 @@ export default function ChatScreen() {
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      // Offline before the first token: queue the exact request instead of
+      // failing. The bubble shows a pending marker; the outbox flush replays
+      // the stored request and patches this bubble with the real answer.
+      if (isNetworkError(error) && !replyId && requestMessages && activeId) {
+        await queuePendingMessage(requestMessages);
+        return; // finally still runs — composer unlocks, sync fires
+      }
       if (replyId) {
         // A stream was already painting — turn that bubble into the error
         // message instead of appending a second one.
@@ -1075,6 +1260,9 @@ export default function ChatScreen() {
       setSending(false);
       // Fire-and-forget: push the fresh Q/A to the server in the background.
       backgroundSync();
+      // Cheap no-op when the outbox is empty; otherwise connectivity may
+      // have just returned and this drains the queue immediately.
+      void flushOutbox();
     }
   };
 
